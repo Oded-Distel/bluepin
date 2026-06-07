@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>סימון וולבוקס – דיוק מיקום</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 0; font-family: -apple-system, "Arial Hebrew", Arial, sans-serif; background: #f4f4f4; }
+  header {
+    background: #1f2937; color: #fff; padding: 14px 22px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; margin: 0; flex: 1; min-width: 200px; }
+  header .help { font-size: 13px; opacity: .85; }
+  header button {
+    padding: 10px 18px; border: 0; border-radius: 6px; cursor: pointer; font-size: 14px;
+    font-weight: bold;
+  }
+  .btn-save     { background: #16a34a; color: #fff; }
+  .btn-add-wb   { background: #dc2626; color: #fff; }
+  .btn-add-cam  { background: #2563eb; color: #fff; }
+  .btn-reset    { background: #64748b; color: #fff; }
+
+  main { display: flex; gap: 8px; padding: 8px; height: calc(100vh - 70px); }
+  .panel {
+    background: #fff; border: 1px solid #d1d5db; border-radius: 6px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .panel.main { flex: 1; }
+  .panel.side { width: 300px; }
+  .panel-head {
+    padding: 8px 12px; background: #f3f4f6; font-size: 13px; font-weight: bold;
+    border-bottom: 1px solid #d1d5db;
+  }
+  .canvas-wrap {
+    flex: 1; overflow: auto; position: relative; background: #fafafa;
+  }
+  .img-wrap { position: relative; display: inline-block; }
+  .img-wrap img { display: block; user-select: none; -webkit-user-drag: none; }
+
+  .marker {
+    position: absolute; transform: translate(-50%, -50%);
+    border-radius: 50%; cursor: grab; z-index: 5;
+    box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  }
+  .marker:active { cursor: grabbing; }
+  .marker.wb  { background: rgba(220,38,38,0.95); border: 2px solid #7f1d1d; }
+  .marker.cam { background: rgba(37,99,235,0.95); border: 2px solid #1e3a8a; }
+  .marker .label {
+    position: absolute; top: 110%; left: 50%; transform: translateX(-50%);
+    white-space: nowrap; background: rgba(255,255,255,0.95);
+    padding: 2px 7px; border-radius: 3px; font-size: 13px; font-weight: bold;
+    border: 1px solid currentColor; cursor: text;
+  }
+  .marker.wb  .label { color: #b91c1c; }
+  .marker.cam .label { color: #1d4ed8; }
+  .marker .x {
+    position: absolute; top: -8px; right: -8px; background: #1f2937; color: #fff;
+    width: 18px; height: 18px; border-radius: 50%; font-size: 11px; line-height: 18px;
+    text-align: center; cursor: pointer; opacity: 0;
+    transition: opacity .15s;
+  }
+  .marker:hover .x { opacity: 1; }
+
+  #zoomBar { display: flex; gap: 6px; padding: 6px 10px; background: #f3f4f6; font-size: 12px; align-items: center; border-bottom: 1px solid #d1d5db;}
+  #zoomBar button { padding: 4px 10px; cursor: pointer; background: #fff; border: 1px solid #d1d5db; border-radius: 4px; }
+  #zoomBar button.active { background: #1f2937; color: #fff; }
+
+  .side-list { padding: 8px; overflow-y: auto; flex: 1; }
+  .side-list .item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px;
+    cursor: pointer;
+  }
+  .side-list .item:hover { background: #f9fafb; }
+  .side-list .item .dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+  .side-list .item .dot.wb  { background: #dc2626; }
+  .side-list .item .dot.cam { background: #2563eb; }
+  .side-list .item .name { flex: 1; font-weight: bold; }
+  .side-list .item .name.wb  { color: #b91c1c; }
+  .side-list .item .name.cam { color: #1d4ed8; }
+  .side-list .item .coord { font-size: 10px; color: #6b7280; }
+  .side-list .item .actions { display: flex; gap: 4px; }
+  .side-list .item .actions button { font-size: 11px; padding: 2px 5px; background: #fff; border: 1px solid #d1d5db; border-radius: 3px; cursor: pointer; }
+
+  #refPanel { display: flex; flex-direction: column; }
+  #refPanel .canvas-wrap { background: #f9fafb; }
+
+  .add-bar {
+    padding: 8px 12px; background: #fffbeb; border-bottom: 1px solid #fde68a;
+    font-size: 12px;
+  }
+  .add-bar.active { background: #fef3c7; }
+  .add-bar select, .add-bar input { padding: 4px; font-size: 12px; margin: 0 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>סימון וולבוקס – לחץ וגרור לדיוק מיקום</h1>
+  <span class="help">לחץ על שם בנקודה לעריכה • גרור עיגול להזזה • × למחיקה</span>
+  <button class="btn-add-wb"  id="btnAddWB">+ הוסף וולבוקס</button>
+  <button class="btn-add-cam" id="btnAddCam">+ הוסף מצלמה</button>
+  <button class="btn-reset"   id="btnReset">איפוס לברירת מחדל</button>
+  <button class="btn-save"    id="btnSave">💾 שמור JSON ושלח לעודד</button>
+</header>
+
+<div class="add-bar" id="addBar" style="display:none;">
+  <span id="addBarText"></span> – לחץ בתכנית להוספת הנקודה
+  <button onclick="cancelAdd()">ביטול</button>
+</div>
+
+<main>
+
+  <div class="panel main">
+    <div class="panel-head">תכנית מקורית – ערוך כאן</div>
+    <div id="zoomBar">
+      <strong style="margin-left:8px;">זום:</strong>
+      <button data-z="0.3">30%</button>
+      <button data-z="0.4" class="active">40%</button>
+      <button data-z="0.5">50%</button>
+      <button data-z="0.75">75%</button>
+      <button data-z="1.0">100%</button>
+      <span id="coord" style="margin-right:auto;color:#6b7280;"></span>
+    </div>
+    <div class="canvas-wrap" id="origWrap">
+      <div class="img-wrap" id="origImgWrap">
+        <img id="origImg" src="__ORIG_SRC__" alt="תכנית מקורית">
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="refPanel" style="width: 28%;">
+    <div class="panel-head">תכנית מסומנת ביד (עזר ויזואלי)</div>
+    <div id="zoomBar2" style="display:flex;gap:6px;padding:6px 10px;background:#f3f4f6;font-size:12px;border-bottom:1px solid #d1d5db;">
+      <button data-z="0.3" class="active" style="padding:4px 10px;background:#1f2937;color:#fff;border:0;border-radius:4px;">30%</button>
+      <button data-z="0.5" style="padding:4px 10px;background:#fff;border:1px solid #d1d5db;border-radius:4px;">50%</button>
+      <button data-z="0.75" style="padding:4px 10px;background:#fff;border:1px solid #d1d5db;border-radius:4px;">75%</button>
+      <button data-z="1.0" style="padding:4px 10px;background:#fff;border:1px solid #d1d5db;border-radius:4px;">100%</button>
+    </div>
+    <div class="canvas-wrap">
+      <div class="img-wrap"><img id="refImg" src="__MARKED_SRC__" alt="תכנית מסומנת"></div>
+    </div>
+  </div>
+
+  <div class="panel side">
+    <div class="panel-head">רשימת נקודות (<span id="count">0</span>)</div>
+    <div class="side-list" id="markerList"></div>
+  </div>
+
+</main>
+
+<script>
+// ====================  ברירת מחדל – הנקודות שכבר זוהו  ====================
+const DEFAULT_MARKERS = [
+  // וולבוקסים (אדום)
+  {type:'wb', name:'WB MAIN A', x:3050, y: 950},
+  {type:'wb', name:'WB MAIN B', x:1700, y:1880},
+  {type:'wb', name:'WB MAIN C', x:2050, y:1880},
+  {type:'wb', name:'WB Z',      x:1850, y:1820},
+  {type:'wb', name:'WB M',      x: 730, y:1920},
+  {type:'wb', name:'WB A',      x:1900, y:1180},
+  {type:'wb', name:'WB B',      x:1450, y:1580},
+  {type:'wb', name:'WB C',      x:1230, y:1015},
+  {type:'wb', name:'WB C',      x:1730, y:1015},
+  {type:'wb', name:'WB C',      x:1230, y:1410},
+  {type:'wb', name:'WB C',      x:1730, y:1410},
+  {type:'wb', name:'WB D',      x:1110, y:1180},
+  {type:'wb', name:'WB K',      x:1760, y:1450},
+  {type:'wb', name:'WB G',      x: 820, y:1820},
+  {type:'wb', name:'WB H',      x:1080, y:1900},
+  {type:'wb', name:'WB I',      x:1350, y:1680},
+  {type:'wb', name:'WB F',      x:1500, y: 780},
+  {type:'wb', name:'WB E',      x:1450, y: 380},
+  {type:'wb', name:'WB P',      x:1560, y:1180},
+  {type:'wb', name:'WB T',      x:1370, y:1180},
+  // מצלמות (כחול) – בפינות הפרקט ובמרכז
+  {type:'cam', name:'',         x:1230, y:1015},
+  {type:'cam', name:'',         x:1730, y:1015},
+  {type:'cam', name:'',         x:1230, y:1410},
+  {type:'cam', name:'',         x:1730, y:1410},
+  {type:'cam', name:'',         x:1450, y:1180},
+  {type:'cam', name:'',         x:1850, y:1180},
+];
+
+// ====================  State  ====================
+let markers = loadMarkers();
+let origScale = 0.4;
+let refScale = 0.3;
+let addMode = null; // 'wb' or 'cam' or null
+
+const origImg = document.getElementById('origImg');
+const origImgWrap = document.getElementById('origImgWrap');
+const refImg = document.getElementById('refImg');
+const markerList = document.getElementById('markerList');
+const coord = document.getElementById('coord');
+const countEl = document.getElementById('count');
+const addBar = document.getElementById('addBar');
+const addBarText = document.getElementById('addBarText');
+
+function loadMarkers() {
+  const saved = localStorage.getItem('kaplan_markers_v2');
+  if (saved) return JSON.parse(saved);
+  return DEFAULT_MARKERS.map((m, i) => ({...m, id: i+1}));
+}
+function saveMarkers() {
+  localStorage.setItem('kaplan_markers_v2', JSON.stringify(markers));
+}
+
+// ====================  Zoom  ====================
+function applyZoom() {
+  origImg.style.width = (origImg.naturalWidth * origScale) + 'px';
+  refImg.style.width  = (refImg.naturalWidth  * refScale)  + 'px';
+  renderMarkers();
+}
+document.getElementById('zoomBar').addEventListener('click', e => {
+  if (!e.target.dataset.z) return;
+  origScale = parseFloat(e.target.dataset.z);
+  document.querySelectorAll('#zoomBar button').forEach(b => b.classList.toggle('active', b.dataset.z === e.target.dataset.z));
+  applyZoom();
+});
+document.getElementById('zoomBar2').addEventListener('click', e => {
+  if (!e.target.dataset.z) return;
+  refScale = parseFloat(e.target.dataset.z);
+  document.querySelectorAll('#zoomBar2 button').forEach(b => {
+    const on = b.dataset.z === e.target.dataset.z;
+    b.style.background = on ? '#1f2937' : '#fff';
+    b.style.color = on ? '#fff' : '#000';
+    b.style.border = on ? '0' : '1px solid #d1d5db';
+  });
+  applyZoom();
+});
+
+origImg.addEventListener('mousemove', e => {
+  const r = origImg.getBoundingClientRect();
+  const x = Math.round((e.clientX - r.left) / origScale);
+  const y = Math.round((e.clientY - r.top)  / origScale);
+  coord.textContent = `מיקום: (${x}, ${y})`;
+});
+
+// ====================  Add mode  ====================
+function startAdd(type) {
+  addMode = type;
+  addBar.style.display = 'block';
+  addBar.classList.add('active');
+  addBarText.innerHTML = (type === 'wb')
+    ? 'מצב הוספה: <span style="color:#b91c1c;font-weight:bold;">וולבוקס חדש</span>'
+    : 'מצב הוספה: <span style="color:#1d4ed8;font-weight:bold;">מצלמה חדשה</span>';
+}
+function cancelAdd() {
+  addMode = null;
+  addBar.style.display = 'none';
+}
+document.getElementById('btnAddWB').onclick  = () => startAdd('wb');
+document.getElementById('btnAddCam').onclick = () => startAdd('cam');
+
+origImgWrap.addEventListener('click', e => {
+  if (!addMode) return;
+  if (e.target.closest('.marker')) return;
+  const r = origImg.getBoundingClientRect();
+  const x = (e.clientX - r.left) / origScale;
+  const y = (e.clientY - r.top) / origScale;
+  const name = (addMode === 'wb')
+    ? (prompt('שם הוולבוקס:', 'WB ') || '')
+    : (prompt('שם המצלמה (אופציונלי):', '') || '');
+  if (addMode === 'wb' && !name) { cancelAdd(); return; }
+  const nextId = Math.max(0, ...markers.map(m => m.id || 0)) + 1;
+  markers.push({id: nextId, type: addMode, name, x, y});
+  cancelAdd();
+  saveMarkers();
+  renderMarkers();
+});
+
+// ====================  Reset  ====================
+document.getElementById('btnReset').onclick = () => {
+  if (!confirm('לאפס את כל הנקודות לברירת המחדל?')) return;
+  localStorage.removeItem('kaplan_markers_v2');
+  markers = DEFAULT_MARKERS.map((m, i) => ({...m, id: i+1}));
+  saveMarkers();
+  renderMarkers();
+};
+
+// ====================  Save (download JSON)  ====================
+document.getElementById('btnSave').onclick = () => {
+  const blob = new Blob([JSON.stringify(markers, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'markers.json';
+  a.click();
+};
+
+// ====================  Render markers on the plan  ====================
+function renderMarkers() {
+  origImgWrap.querySelectorAll('.marker').forEach(n => n.remove());
+  for (const m of markers) {
+    const el = document.createElement('div');
+    el.className = 'marker ' + m.type;
+    const size = (m.type === 'wb') ? 24 : 18;
+    el.style.width = size + 'px';
+    el.style.height = size + 'px';
+    el.style.left = (m.x * origScale) + 'px';
+    el.style.top  = (m.y * origScale) + 'px';
+    el.dataset.id = m.id;
+
+    if (m.name) {
+      const lbl = document.createElement('span');
+      lbl.className = 'label';
+      lbl.textContent = m.name;
+      lbl.onclick = (ev) => { ev.stopPropagation(); renameMarker(m); };
+      el.appendChild(lbl);
+    }
+    const x = document.createElement('span');
+    x.className = 'x';
+    x.textContent = '×';
+    x.onclick = (ev) => { ev.stopPropagation(); deleteMarker(m); };
+    el.appendChild(x);
+
+    el.addEventListener('mousedown', startDrag);
+    origImgWrap.appendChild(el);
+  }
+  renderList();
+}
+
+function startDrag(e) {
+  if (e.target.classList.contains('x')) return;
+  if (e.target.classList.contains('label')) return;
+  const id = parseFloat(this.dataset.id);
+  const m = markers.find(mm => mm.id === id);
+  if (!m) return;
+  const startX = e.clientX, startY = e.clientY;
+  const origX = m.x, origY = m.y;
+  let moved = false;
+  function move(ev) {
+    moved = true;
+    m.x = origX + (ev.clientX - startX) / origScale;
+    m.y = origY + (ev.clientY - startY) / origScale;
+    renderMarkers();
+  }
+  function up() {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    if (moved) saveMarkers();
+  }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+  e.preventDefault();
+}
+
+function renameMarker(m) {
+  const v = prompt('שם הנקודה:', m.name);
+  if (v != null) { m.name = v; saveMarkers(); renderMarkers(); }
+}
+function deleteMarker(m) {
+  if (!confirm(`למחוק את ${m.name || 'הנקודה'}?`)) return;
+  markers = markers.filter(mm => mm.id !== m.id);
+  saveMarkers();
+  renderMarkers();
+}
+
+function renderList() {
+  countEl.textContent = markers.length;
+  markerList.innerHTML = '';
+  for (const m of markers) {
+    const it = document.createElement('div');
+    it.className = 'item';
+    it.innerHTML = `
+      <span class="dot ${m.type}"></span>
+      <span class="name ${m.type}">${m.name || '(ללא שם)'}</span>
+      <span class="coord">${m.x|0},${m.y|0}</span>
+      <span class="actions">
+        <button data-act="rename">שם</button>
+        <button data-act="del">×</button>
+      </span>
+    `;
+    it.onclick = (e) => {
+      const a = e.target.dataset.act;
+      if (a === 'rename') renameMarker(m);
+      else if (a === 'del') deleteMarker(m);
+      else {
+        // scroll to marker
+        const el = origImgWrap.querySelector(`.marker[data-id="${m.id}"]`);
+        if (el) el.scrollIntoView({behavior:'smooth', block:'center', inline:'center'});
+      }
+    };
+    markerList.appendChild(it);
+  }
+}
+
+// ====================  Init  ====================
+origImg.onload = applyZoom;
+refImg.onload = applyZoom;
+if (origImg.complete) applyZoom();
+renderMarkers();
+</script>
+
+</body>
+</html>
