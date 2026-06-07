@@ -67,10 +67,11 @@ def render(markers_path):
 
 def _label(d, text, x, y, color):
     f = font(36, bold=True)
-    bbox = d.textbbox((x, y-22), text, font=f)
+    t = he(text) if any('֐' <= c <= '׿' for c in text) else text
+    bbox = d.textbbox((x, y-22), t, font=f)
     pad = 4
     d.rectangle([bbox[0]-pad, bbox[1]-pad, bbox[2]+pad, bbox[3]+pad], fill="white")
-    d.text((x, y-22), text, fill=color, font=f)
+    d.text((x, y-22), t, fill=color, font=f)
 
 
 def _legend(d, x0, y0, w, h, RED, CAM):
