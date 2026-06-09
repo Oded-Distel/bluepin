@@ -115,6 +115,15 @@
   .legend-side ul { padding: 0; margin: 0; list-style: none; }
   .legend-side button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
 
+  .section-header {
+    font-size: 13px; font-weight: bold; color: #fff;
+    padding: 6px 10px; margin: 12px 0 6px 0;
+    border-radius: 4px; list-style: none; display: block;
+  }
+  .section-header:first-child { margin-top: 0; }
+  .section-header.sh-wb  { background: #c33; }
+  .section-header.sh-cam { background: #06b; }
+
   .marker-card {
     margin-bottom: 8px; border-radius: 6px;
     border: 1px solid #ddd; background: #fff;
@@ -327,7 +336,6 @@
     העלה PDF
     <input type="file" id="pdfInput" accept="application/pdf" style="display:none;">
   </label>
-  <button class="btn-add-cable" id="modeCable">כבל</button>
   <span class="modeLabel" id="modeLabel"></span>
   <button class="btn-render" id="btnRender">ייצא PDF</button>
   <button class="btn-clear"  id="btnClear">נקה הכל</button>
@@ -517,15 +525,9 @@ origWrap.addEventListener('drop', e => {
   save();
 });
 
-// --- Mode buttons ---
-function setMode(newMode) {
-  mode = newMode;
-  cableFromId = null;
-  document.getElementById('modeCable').classList.toggle('mode-active', mode === 'cable');
-  updateModeLabel();
-  renderMarkers();
-}
-document.getElementById('modeCable').onclick = () => setMode(mode === 'cable' ? null : 'cable');
+// cable-mode (legacy click-based wiring) is no longer reachable from the toolbar —
+// the only path to add cables is dragging from a camera's lens. cableFromId
+// stays unused; mode remains null. Markers can still be cleaned via deleteMarker.
 
 function updateModeLabel() {
   if (!pdfDoc) { modeLabel.textContent = ""; return; }
@@ -902,79 +904,90 @@ function startCableDrag(e, cam) {
 // --- List sidebar ---
 function renderList() {
   markerList.innerHTML = '';
-  for (const m of markers) {
-    const card = document.createElement('li');
-    card.className = 'marker-card ' + (m.type === 'wb' ? 'wb-card' : 'cam-card');
+  const wbs  = markers.filter(m => m.type === 'wb');
+  const cams = markers.filter(m => m.type === 'cam');
+  if (wbs.length)  renderSection('Wallboxים', 'wb',  wbs);
+  if (cams.length) renderSection('מצלמות',    'cam', cams);
+}
 
-    // head: name + meta + actions
-    const head = document.createElement('div');
-    head.className = 'card-head';
+function renderSection(title, type, list) {
+  const header = document.createElement('li');
+  header.className = 'section-header ' + (type === 'wb' ? 'sh-wb' : 'sh-cam');
+  header.textContent = `${title} (${list.length})`;
+  markerList.appendChild(header);
+  for (const m of list) markerList.appendChild(buildMarkerCard(m));
+}
 
-    const name = document.createElement('div');
-    name.className = 'name';
-    name.textContent = m.name || '(ללא שם)';
-    head.appendChild(name);
+function buildMarkerCard(m) {
+  const card = document.createElement('li');
+  card.className = 'marker-card ' + (m.type === 'wb' ? 'wb-card' : 'cam-card');
 
-    const meta = document.createElement('div');
-    meta.className = 'meta';
-    let metaText = `(${m.x|0},${m.y|0})`;
-    if (m.type === 'cam' && m.angle != null) metaText += ` ${m.angle|0}°`;
-    meta.textContent = metaText;
-    head.appendChild(meta);
+  const head = document.createElement('div');
+  head.className = 'card-head';
 
-    const actions = document.createElement('div');
-    actions.className = 'actions';
+  const name = document.createElement('div');
+  name.className = 'name';
+  name.textContent = m.name || '(ללא שם)';
+  head.appendChild(name);
 
-    const renameBtn = document.createElement('button');
-    renameBtn.textContent = '✎';
-    renameBtn.title = 'שנה שם';
-    renameBtn.onclick = () => {
-      if (m.type === 'wb') {
-        openContentsPanel(m.id, true);
-      } else {
-        const v = prompt("שנה שם:", m.name);
-        if (v != null) { m.name = v; save(); renderMarkers(); renderList(); }
-      }
-    };
-    actions.appendChild(renameBtn);
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  let metaText = `(${m.x|0},${m.y|0})`;
+  if (m.type === 'cam' && m.angle != null) metaText += ` ${m.angle|0}°`;
+  meta.textContent = metaText;
+  head.appendChild(meta);
 
-    const delBtn = document.createElement('button');
-    delBtn.textContent = '✕';
-    delBtn.title = 'מחק';
-    delBtn.onclick = () => deleteMarker(m.id);
-    actions.appendChild(delBtn);
+  const actions = document.createElement('div');
+  actions.className = 'actions';
 
-    head.appendChild(actions);
-    card.appendChild(head);
-
-    // WB-only: contents column
+  const renameBtn = document.createElement('button');
+  renameBtn.textContent = '✎';
+  renameBtn.title = 'שנה שם';
+  renameBtn.onclick = () => {
     if (m.type === 'wb') {
-      const list = document.createElement('ul');
-      list.className = 'contents-list';
-      const items = m.contents || [];
-      if (items.length === 0) {
-        const li = document.createElement('li');
-        li.className = 'empty';
-        li.textContent = '— ריק —';
-        list.appendChild(li);
-      } else {
-        for (const it of items) {
-          const li = document.createElement('li');
-          const nameSpan = document.createElement('span');
-          nameSpan.className = 'item-name';
-          nameSpan.textContent = it.name;
-          const qtySpan = document.createElement('span');
-          qtySpan.className = 'item-qty';
-          qtySpan.textContent = '×' + it.qty;
-          li.append(nameSpan, qtySpan);
-          list.appendChild(li);
-        }
-      }
-      card.appendChild(list);
+      openContentsPanel(m.id, true);
+    } else {
+      const v = prompt("שנה שם:", m.name);
+      if (v != null) { m.name = v; save(); renderMarkers(); renderList(); }
     }
+  };
+  actions.appendChild(renameBtn);
 
-    markerList.appendChild(card);
+  const delBtn = document.createElement('button');
+  delBtn.textContent = '✕';
+  delBtn.title = 'מחק';
+  delBtn.onclick = () => deleteMarker(m.id);
+  actions.appendChild(delBtn);
+
+  head.appendChild(actions);
+  card.appendChild(head);
+
+  if (m.type === 'wb') {
+    const list = document.createElement('ul');
+    list.className = 'contents-list';
+    const items = m.contents || [];
+    if (items.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = '— ריק —';
+      list.appendChild(li);
+    } else {
+      for (const it of items) {
+        const li = document.createElement('li');
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'item-name';
+        nameSpan.textContent = it.name;
+        const qtySpan = document.createElement('span');
+        qtySpan.className = 'item-qty';
+        qtySpan.textContent = '×' + it.qty;
+        li.append(nameSpan, qtySpan);
+        list.appendChild(li);
+      }
+    }
+    card.appendChild(list);
   }
+
+  return card;
 }
 
 function save() {
@@ -1251,8 +1264,13 @@ function drawCameraOnCanvas(ctx, m) {
   ctx.fillStyle = '#06b';
   ctx.strokeStyle = '#fff';
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.roundRect(-16, -10, 20, 20, 3);
+  if (ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(-16, -10, 20, 20, 3);
+  } else {
+    ctx.beginPath();
+    ctx.rect(-16, -10, 20, 20);
+  }
   ctx.fill(); ctx.stroke();
   // lens
   ctx.beginPath();
