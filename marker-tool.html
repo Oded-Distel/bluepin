@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>BluePin – סימון תכניות</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; padding: 0; font-family: -apple-system, "Arial Hebrew", Arial, sans-serif; background: #f0f0f0; }
@@ -251,9 +252,7 @@
   <button class="btn-add-cam"   id="modeCAM">מצלמה</button>
   <button class="btn-add-cable" id="modeCable">כבל</button>
   <span class="modeLabel" id="modeLabel">מצב: העלה PDF כדי להתחיל</span>
-  <button class="btn-export" id="btnExport">ייצא JSON</button>
-  <button class="btn-import" id="btnImport">ייבא JSON</button>
-  <button class="btn-render" id="btnRender">תכנית סופית (PNG)</button>
+  <button class="btn-render" id="btnRender">ייצא PDF</button>
   <button class="btn-clear"  id="btnClear">נקה הכל</button>
 </header>
 
@@ -293,7 +292,6 @@
   <div class="legend-side">
     <h3>הנקודות שסומנו</h3>
     <ul id="markerList"></ul>
-    <textarea id="jsonArea" placeholder="JSON של הסימונים (לייבוא/ייצוא)"></textarea>
   </div>
 
 </main>
@@ -359,7 +357,6 @@ const emptyMsg = document.getElementById('emptyMsg');
 const cableLayer = document.getElementById('cableLayer');
 const markerList = document.getElementById('markerList');
 const modeLabel = document.getElementById('modeLabel');
-const jsonArea = document.getElementById('jsonArea');
 const origCoords = document.getElementById('origCoords');
 const pageSelector = document.getElementById('pageSelector');
 const pdfName = document.getElementById('pdfName');
@@ -486,8 +483,20 @@ document.getElementById('pdfInput').addEventListener('change', async e => {
   await renderPdfPage(1);
   emptyMsg.style.display = 'none';
   origImgWrap.style.display = '';
+  if (markers.length === 0 && cables.length === 0) seedStartingMarkers();
   updateModeLabel();
 });
+
+function seedStartingMarkers() {
+  const W = origImg.naturalWidth, H = origImg.naturalHeight;
+  if (!W || !H) return;
+  const xs = [W * 0.25, W * 0.5, W * 0.75];
+  for (let i = 0; i < 3; i++) {
+    markers.push({ id: Date.now() + Math.random(), type: 'wb',  name: 'WB '  + (i+1), x: xs[i], y: H * 0.30, contents: [] });
+    markers.push({ id: Date.now() + Math.random(), type: 'cam', name: 'Cam ' + (i+1), x: xs[i], y: H * 0.70, angle: 0 });
+  }
+  save();
+}
 
 pageSelector.addEventListener('change', async e => {
   currentPageNum = parseInt(e.target.value, 10);
@@ -808,7 +817,6 @@ function renderList() {
       markerList.appendChild(li);
     }
   }
-  jsonArea.value = JSON.stringify({ markers, cables }, null, 2);
 }
 
 function save() {
@@ -816,33 +824,7 @@ function save() {
   renderMarkers();
 }
 
-// --- Export / Import / Clear ---
-document.getElementById('btnExport').onclick = () => {
-  const blob = new Blob([JSON.stringify({ markers, cables }, null, 2)], {type: 'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'markers.json';
-  a.click();
-};
-document.getElementById('btnImport').onclick = () => {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json';
-  input.onchange = e => {
-    const f = e.target.files[0];
-    const r = new FileReader();
-    r.onload = () => {
-      try {
-        const data = JSON.parse(r.result);
-        if (Array.isArray(data)) { markers = data; cables = []; }
-        else { markers = data.markers || []; cables = data.cables || []; }
-        save();
-      } catch (err) { alert("שגיאת ייבוא: " + err.message); }
-    };
-    r.readAsText(f);
-  };
-  input.click();
-};
+// --- Clear ---
 document.getElementById('btnClear').onclick = () => {
   if (confirm("למחוק את כל הנקודות והכבלים?")) {
     markers = []; cables = []; save();
@@ -893,12 +875,11 @@ function renderFinal() {
   }
 
   const dataURL = canvas.toDataURL('image/png');
-  const w = window.open('');
-  w.document.write(`<title>תכנית סופית</title>
-    <body style="margin:0;background:#222;text-align:center;">
-      <p style="color:#fff;font-family:Arial;">לחץ כפתור עכבר ימני → "שמור תמונה בשם"</p>
-      <img src="${dataURL}" style="max-width:100%;background:#fff;">
-    </body>`);
+  const { jsPDF } = window.jspdf;
+  const orientation = W > H ? 'landscape' : 'portrait';
+  const pdf = new jsPDF({ orientation, unit: 'px', format: [W, H], hotfixes: ['px_scaling'] });
+  pdf.addImage(dataURL, 'PNG', 0, 0, W, H);
+  pdf.save('תכנית-וולבוקס.pdf');
 }
 
 function drawCameraOnCanvas(ctx, m) {
