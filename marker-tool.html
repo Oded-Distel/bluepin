@@ -798,25 +798,6 @@ function renderList() {
 
     markerList.appendChild(li);
   }
-  // append cables section if any
-  if (cables.length) {
-    const sep = document.createElement('li');
-    sep.style.borderBottom = 'none';
-    sep.innerHTML = `<strong style="color:#a0a;">כבלים (${cables.length})</strong>`;
-    markerList.appendChild(sep);
-    for (const c of cables) {
-      const a = markers.find(m => m.id === c.fromId);
-      const b = markers.find(m => m.id === c.toId);
-      const li = document.createElement('li');
-      li.style.fontSize = '12px';
-      li.innerHTML = `<span style="color:#a0a;">↔ ${a?.name || '?'} — ${b?.name || '?'}</span>`;
-      const del = document.createElement('button');
-      del.textContent = '✕';
-      del.onclick = () => { cables = cables.filter(cc => cc.id !== c.id); save(); };
-      li.appendChild(del);
-      markerList.appendChild(li);
-    }
-  }
 }
 
 function save() {
