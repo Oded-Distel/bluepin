@@ -2,28 +2,31 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>סימון וולבוקס - כלי דיוק</title>
+<title>BluePin – סימון תכניות</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; padding: 0; font-family: -apple-system, "Arial Hebrew", Arial, sans-serif; background: #f0f0f0; }
   header {
     background: #222; color: #fff; padding: 10px 20px;
-    display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   }
-  header h1 { font-size: 18px; margin: 0; }
-  header button {
+  header h1 { font-size: 18px; margin: 0; margin-left: 10px; }
+  header button, header label.fake-btn {
     padding: 8px 14px; border: 0; border-radius: 5px; cursor: pointer; font-size: 14px;
     font-weight: bold;
   }
+  .btn-upload   { background: #5a5; color: #fff; }
   .btn-add-wb   { background: #d40; color: #fff; }
   .btn-add-cam  { background: #06d; color: #fff; }
+  .btn-add-cable{ background: #a0a; color: #fff; }
   .btn-export   { background: #2a2; color: #fff; }
   .btn-import   { background: #888; color: #fff; }
   .btn-clear    { background: #444; color: #fff; }
   .btn-render   { background: #f80; color: #fff; }
-  .mode-active  { outline: 3px solid #fff; }
+  .mode-active  { outline: 3px solid #fff; outline-offset: 1px; }
 
-  main { display: flex; gap: 8px; padding: 8px; height: calc(100vh - 60px); }
+  main { display: flex; gap: 8px; padding: 8px; height: calc(100vh - 110px); }
   .panel {
     flex: 1; background: #fff; border: 1px solid #ccc;
     display: flex; flex-direction: column;
@@ -31,6 +34,7 @@
   }
   .panel h3 {
     margin: 0; padding: 6px 10px; background: #eee; font-size: 13px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   }
   .canvas-wrap {
     flex: 1; overflow: auto; position: relative;
@@ -38,25 +42,56 @@
   }
   .img-wrap { position: relative; display: inline-block; cursor: crosshair; }
   .img-wrap img { display: block; user-select: none; -webkit-user-drag: none; }
+  #cableLayer {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+  #cableLayer line { stroke: #000; stroke-width: 3; pointer-events: stroke; cursor: pointer; }
+  #cableLayer line:hover { stroke: #f0f; stroke-width: 5; }
+
   .marker {
     position: absolute; transform: translate(-50%, -50%);
-    border-radius: 50%; pointer-events: auto; cursor: move;
-    font-weight: bold; display: flex; align-items: center; justify-content: center;
-    color: #fff; text-shadow: 0 0 2px #000;
+    pointer-events: auto;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
   }
+  .marker.wb {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(220,30,30,0.85);
+    border: 3px solid #b00;
+    cursor: move;
+  }
+  .marker.cam {
+    width: 44px; height: 44px;
+    cursor: move;
+  }
+  .marker.cam svg { width: 100%; height: 100%; overflow: visible; }
   .marker .label {
     position: absolute; top: 110%; left: 50%; transform: translateX(-50%);
     white-space: nowrap; background: rgba(255,255,255,0.9);
-    padding: 2px 6px; border-radius: 3px; color: inherit; font-size: 14px;
+    padding: 2px 6px; border-radius: 3px; font-size: 13px;
     border: 1px solid currentColor;
   }
-  .marker.wb  { background: rgba(220,30,30,0.85); border: 3px solid #b00; color: #b00; }
-  .marker.cam { background: rgba(0,90,220,0.85); border: 3px solid #06b; color: #06b; }
+  .marker.wb .label { color: #b00; }
+  .marker.cam .label { color: #06b; }
   .marker .x {
     position: absolute; top: -10px; right: -10px; background: #000; color: #fff;
     width: 18px; height: 18px; border-radius: 50%; font-size: 12px;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
+    z-index: 5;
   }
+  .marker .rot-handle {
+    position: absolute;
+    width: 12px; height: 12px;
+    background: #fff; border: 2px solid #06b; border-radius: 50%;
+    cursor: grab;
+    z-index: 4;
+  }
+  .marker.cable-from { outline: 4px solid #f0f; outline-offset: 2px; border-radius: 50%; }
+
   #zoomControls { display: flex; gap: 6px; padding: 4px 8px; background: #eee; font-size: 12px;}
   #zoomControls button { padding: 2px 8px; cursor: pointer; }
   .legend-side {
@@ -67,11 +102,11 @@
   .legend-side ul { padding: 0 16px 0 0; margin: 0; list-style: none; }
   .legend-side li {
     padding: 4px 0; border-bottom: 1px solid #eee; font-size: 13px;
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: space-between; align-items: center; gap: 4px;
   }
-  .legend-side .wb-name { color: #b00; font-weight: bold; }
+  .legend-side .wb-name  { color: #b00; font-weight: bold; }
   .legend-side .cam-name { color: #06b; font-weight: bold; }
-  .legend-side button { font-size: 11px; padding: 2px 6px; }
+  .legend-side button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
   textarea {
     width: 100%; height: 100px; margin-top: 10px; font-family: monospace; font-size: 11px;
   }
@@ -80,35 +115,51 @@
     background: #fafafa; border-bottom: 1px solid #ddd;
   }
   .quick-names button {
-    padding: 3px 8px; font-size: 12px; cursor: pointer;
+    padding: 3px 8px; font-size: 12px; cursor: grab;
     background: #fff; border: 1px solid #b00; color: #b00; border-radius: 3px;
   }
-  .quick-names button.cam { border-color: #06b; color: #06b; }
+  .quick-names button:active { cursor: grabbing; }
+  .quick-names button.dragging { opacity: 0.4; }
+  .canvas-wrap.drop-target { outline: 3px dashed #b00; outline-offset: -3px; }
   .modeLabel { padding: 4px 10px; background:#fff; color:#222; border-radius: 4px; font-size: 12px; }
+  .empty-msg {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; color: #888; font-size: 16px; gap: 12px;
+  }
+  .empty-msg .big { font-size: 22px; color: #444; font-weight: bold; }
+  #pageSelector { padding: 2px 6px; font-size: 13px; }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>סימון וולבוקס – כלי דיוק</h1>
-  <button class="btn-add-wb"  id="modeWB">מצב הוספת וולבוקס (אדום)</button>
-  <button class="btn-add-cam" id="modeCAM">מצב הוספת מצלמה (כחול)</button>
-  <span class="modeLabel" id="modeLabel">מצב: בחר מצב למעלה</span>
+  <h1>BluePin – סימון תכניות</h1>
+  <label class="fake-btn btn-upload">
+    העלה PDF
+    <input type="file" id="pdfInput" accept="application/pdf" style="display:none;">
+  </label>
+  <button class="btn-add-wb"    id="modeWB">וולבוקס (אדום)</button>
+  <button class="btn-add-cam"   id="modeCAM">מצלמה</button>
+  <button class="btn-add-cable" id="modeCable">כבל</button>
+  <span class="modeLabel" id="modeLabel">מצב: העלה PDF כדי להתחיל</span>
   <button class="btn-export" id="btnExport">ייצא JSON</button>
   <button class="btn-import" id="btnImport">ייבא JSON</button>
-  <button class="btn-render" id="btnRender">הצג כקובץ סופי (HTML)</button>
+  <button class="btn-render" id="btnRender">תכנית סופית (PNG)</button>
   <button class="btn-clear"  id="btnClear">נקה הכל</button>
 </header>
 
 <div class="quick-names" id="quickNames">
-  <strong style="align-self:center;margin-left:6px;">קליק מהיר על שם →</strong>
-  <!-- filled by JS -->
+  <strong style="align-self:center;margin-left:6px;">קליק על שם, או גרור ישירות לתכנית →</strong>
 </div>
 
 <main>
 
   <div class="panel">
-    <h3>תכנית מקורית – לחץ למיקום נקודה</h3>
+    <h3>
+      <span>תכנית – לחץ למיקום נקודה</span>
+      <select id="pageSelector" style="display:none;"></select>
+      <span id="pdfName" style="color:#666;font-weight:normal;"></span>
+    </h3>
     <div id="zoomControls">
       <button data-z="0.3">30%</button>
       <button data-z="0.5">50%</button>
@@ -119,25 +170,13 @@
       <span id="origCoords" style="margin-right:auto;"></span>
     </div>
     <div class="canvas-wrap" id="origWrap">
-      <div class="img-wrap" id="origImgWrap">
-        <img id="origImg" src="original.png" alt="תכנית מקורית">
+      <div id="emptyMsg" class="empty-msg">
+        <div class="big">אין תכנית טעונה</div>
+        <div>לחץ "העלה PDF" בכותרת כדי להתחיל</div>
       </div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <h3>תכנית מסומנת ביד – להתייחסות בלבד</h3>
-    <div id="zoomControls2" style="display:flex;gap:6px;padding:4px 8px;background:#eee;font-size:12px;">
-      <button data-z="0.3">30%</button>
-      <button data-z="0.5">50%</button>
-      <button data-z="0.75">75%</button>
-      <button data-z="1.0">100%</button>
-      <button data-z="1.5">150%</button>
-      <button data-z="2.0">200%</button>
-    </div>
-    <div class="canvas-wrap" id="refWrap">
-      <div class="img-wrap" id="refImgWrap" style="cursor:default;">
-        <img id="refImg" src="marked_upright.png" alt="תכנית מסומנת">
+      <div class="img-wrap" id="origImgWrap" style="display:none;">
+        <img id="origImg" alt="תכנית">
+        <svg id="cableLayer"></svg>
       </div>
     </div>
   </div>
@@ -151,116 +190,260 @@
 </main>
 
 <script>
+// --- PDF.js worker ---
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
 const QUICK_NAMES = [
-  // From the legend Word doc – פינוי מהיר
   "WB MAIN A", "WB MAIN B", "WB MAIN C", "WB Z", "WB M",
   "WB A", "WB B", "WB C", "WB D", "WB K",
   "WB F", "WB G", "WB H", "WB I",
   "WB E", "WB P", "WB T"
 ];
 
-// State
-let mode = null; // 'wb' or 'cam'
+// --- State ---
+let mode = null; // 'wb' | 'cam' | 'cable' | null
 let nextName = "";
-let markers = JSON.parse(localStorage.getItem('kaplan_markers') || '[]');
+let cableFromId = null;       // marker id selected as "from" while in cable mode
+let pdfDoc = null;            // loaded PDF (pdfjs document proxy)
+let currentPageNum = 1;
 let origScale = 0.5;
-let refScale = 0.5;
 
+const stored = JSON.parse(localStorage.getItem('bluepin_state') || 'null');
+// migration: old format was an array of markers
+let markers = [];
+let cables = [];
+if (Array.isArray(stored)) {
+  markers = stored;
+} else if (stored && typeof stored === 'object') {
+  markers = stored.markers || [];
+  cables = stored.cables || [];
+}
+
+// --- DOM refs ---
 const origImg = document.getElementById('origImg');
 const origImgWrap = document.getElementById('origImgWrap');
-const refImg = document.getElementById('refImg');
-const refImgWrap = document.getElementById('refImgWrap');
+const emptyMsg = document.getElementById('emptyMsg');
+const cableLayer = document.getElementById('cableLayer');
 const markerList = document.getElementById('markerList');
 const modeLabel = document.getElementById('modeLabel');
 const jsonArea = document.getElementById('jsonArea');
 const origCoords = document.getElementById('origCoords');
+const pageSelector = document.getElementById('pageSelector');
+const pdfName = document.getElementById('pdfName');
 
-// --- Build quick name bar ---
+// --- Quick names bar (click to set name, drag to place WB directly) ---
+let dragName = null;
 const qn = document.getElementById('quickNames');
 QUICK_NAMES.forEach(name => {
   const b = document.createElement('button');
   b.textContent = name;
+  b.draggable = true;
   b.onclick = () => { nextName = name; updateModeLabel(); };
+  b.addEventListener('dragstart', e => {
+    if (!pdfDoc) { e.preventDefault(); return; }
+    dragName = name;
+    b.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'copy';
+    // setData is required for Firefox to start the drag
+    e.dataTransfer.setData('text/plain', name);
+  });
+  b.addEventListener('dragend', () => {
+    dragName = null;
+    b.classList.remove('dragging');
+    document.getElementById('origWrap').classList.remove('drop-target');
+  });
   qn.appendChild(b);
 });
 const bCustom = document.createElement('button');
 bCustom.textContent = "שם מותאם...";
 bCustom.style.background = "#ffe";
+bCustom.draggable = false;
 bCustom.onclick = () => {
-  const v = prompt("הקלד שם וולבוקס:", nextName || "WB ");
+  const v = prompt("הקלד שם:", nextName || "WB ");
   if (v) { nextName = v; updateModeLabel(); }
 };
 qn.appendChild(bCustom);
 
+// Drop zone on the plan
+const origWrap = document.getElementById('origWrap');
+origWrap.addEventListener('dragover', e => {
+  if (!dragName) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  origWrap.classList.add('drop-target');
+});
+origWrap.addEventListener('dragleave', e => {
+  if (e.target === origWrap) origWrap.classList.remove('drop-target');
+});
+origWrap.addEventListener('drop', e => {
+  if (!dragName || !pdfDoc) return;
+  e.preventDefault();
+  origWrap.classList.remove('drop-target');
+  const r = origImg.getBoundingClientRect();
+  const x = (e.clientX - r.left) / origScale;
+  const y = (e.clientY - r.top) / origScale;
+  // ignore drops outside the actual image
+  if (x < 0 || y < 0 || x > origImg.naturalWidth || y > origImg.naturalHeight) return;
+  markers.push({ id: Date.now() + Math.random(), type: 'wb', name: dragName, x, y });
+  save();
+});
+
 // --- Mode buttons ---
-document.getElementById('modeWB').onclick = () => {
-  mode = 'wb';
-  document.getElementById('modeWB').classList.add('mode-active');
-  document.getElementById('modeCAM').classList.remove('mode-active');
+function setMode(newMode) {
+  mode = newMode;
+  cableFromId = null;
+  document.getElementById('modeWB').classList.toggle('mode-active', mode === 'wb');
+  document.getElementById('modeCAM').classList.toggle('mode-active', mode === 'cam');
+  document.getElementById('modeCable').classList.toggle('mode-active', mode === 'cable');
   updateModeLabel();
-};
-document.getElementById('modeCAM').onclick = () => {
-  mode = 'cam';
-  document.getElementById('modeCAM').classList.add('mode-active');
-  document.getElementById('modeWB').classList.remove('mode-active');
-  updateModeLabel();
-};
+  renderMarkers();
+}
+document.getElementById('modeWB').onclick    = () => setMode(mode === 'wb'    ? null : 'wb');
+document.getElementById('modeCAM').onclick   = () => setMode(mode === 'cam'   ? null : 'cam');
+document.getElementById('modeCable').onclick = () => setMode(mode === 'cable' ? null : 'cable');
+
 function updateModeLabel() {
   let txt = "מצב: ";
+  if (!pdfDoc) { modeLabel.textContent = "מצב: העלה PDF כדי להתחיל"; return; }
   if (!mode) txt += "בחר מצב למעלה";
-  else txt += mode === 'wb' ? "מוסיף וולבוקס (אדום)" : "מוסיף מצלמה (כחול)";
-  if (nextName) txt += "  |  שם הבא: " + nextName;
+  else if (mode === 'wb')    txt += "מוסיף וולבוקס (אדום)";
+  else if (mode === 'cam')   txt += "מוסיף מצלמה";
+  else if (mode === 'cable') {
+    txt += cableFromId == null
+      ? "כבל: לחץ על נקודה ראשונה"
+      : "כבל: לחץ על נקודה שנייה (Esc לביטול)";
+  }
+  if ((mode === 'wb' || mode === 'cam') && nextName) txt += "  |  שם הבא: " + nextName;
   modeLabel.textContent = txt;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    cableFromId = null;
+    updateModeLabel();
+    renderMarkers();
+  }
+});
+
+// --- PDF upload + render ---
+document.getElementById('pdfInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const arrayBuf = await file.arrayBuffer();
+  pdfDoc = await pdfjsLib.getDocument({ data: arrayBuf }).promise;
+  pdfName.textContent = '— ' + file.name;
+  // page selector
+  pageSelector.innerHTML = '';
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = 'דף ' + i;
+    pageSelector.appendChild(opt);
+  }
+  pageSelector.style.display = pdfDoc.numPages > 1 ? '' : 'none';
+  currentPageNum = 1;
+  pageSelector.value = '1';
+  await renderPdfPage(1);
+  emptyMsg.style.display = 'none';
+  origImgWrap.style.display = '';
+  updateModeLabel();
+});
+
+pageSelector.addEventListener('change', async e => {
+  currentPageNum = parseInt(e.target.value, 10);
+  // wipe markers/cables when switching pages — they belong to a specific page geometry
+  if (markers.length || cables.length) {
+    if (!confirm("מעבר לדף אחר ינקה את הסימונים הנוכחיים. להמשיך?")) {
+      pageSelector.value = String(currentPageNum); // revert UI
+      return;
+    }
+    markers = []; cables = []; save();
+  }
+  await renderPdfPage(currentPageNum);
+});
+
+async function renderPdfPage(pageNum) {
+  const page = await pdfDoc.getPage(pageNum);
+  // render at 2x for crispness
+  const viewport = page.getViewport({ scale: 2.0 });
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  origImg.src = canvas.toDataURL('image/png');
+  await new Promise(res => { origImg.onload = res; });
+  applyZoom();
 }
 
 // --- Zoom ---
 function applyZoom() {
-  origImg.style.width = (origImg.naturalWidth * origScale) + 'px';
-  refImg.style.width  = (refImg.naturalWidth  * refScale)  + 'px';
+  if (!origImg.naturalWidth) return;
+  const w = origImg.naturalWidth * origScale;
+  const h = origImg.naturalHeight * origScale;
+  origImg.style.width = w + 'px';
+  cableLayer.setAttribute('width', w);
+  cableLayer.setAttribute('height', h);
+  cableLayer.style.width = w + 'px';
+  cableLayer.style.height = h + 'px';
   renderMarkers();
 }
 document.getElementById('zoomControls').addEventListener('click', e => {
   if (e.target.dataset.z) { origScale = parseFloat(e.target.dataset.z); applyZoom(); }
 });
-document.getElementById('zoomControls2').addEventListener('click', e => {
-  if (e.target.dataset.z) { refScale = parseFloat(e.target.dataset.z); applyZoom(); }
-});
 
 origImg.addEventListener('mousemove', e => {
+  if (!origImg.naturalWidth) return;
   const r = origImg.getBoundingClientRect();
   const x = Math.round((e.clientX - r.left) / origScale);
   const y = Math.round((e.clientY - r.top)  / origScale);
   origCoords.textContent = `קואורדינטה: (${x}, ${y}) | זום: ${(origScale*100)|0}%`;
 });
 
-// --- Click to add ---
+// --- Click on plan: add marker or pick cable endpoint ---
 origImgWrap.addEventListener('click', e => {
-  if (e.target.classList.contains('x')) return;     // delete-click
-  if (e.target.closest('.marker')) return;          // marker click
-  if (!mode) { alert("בחר קודם מצב (וולבוקס / מצלמה) למעלה"); return; }
+  if (!pdfDoc) return;
+  // clicks that bubble from markers / handles / cables / etc.
+  if (e.target.closest('.marker')) return;
+  if (e.target.closest('#cableLayer')) return;
+
+  if (!mode) { alert("בחר קודם מצב למעלה (וולבוקס / מצלמה / כבל)"); return; }
+  if (mode === 'cable') return; // cable connects markers, not empty space
+
   const name = (mode === 'wb')
     ? (nextName || prompt("שם הוולבוקס:", "WB ") || "")
     : (nextName || prompt("שם המצלמה (אופציונלי):", "") || "");
   const r = origImg.getBoundingClientRect();
   const x = (e.clientX - r.left) / origScale;
   const y = (e.clientY - r.top) / origScale;
-  markers.push({ id: Date.now()+Math.random(), type: mode, name, x, y });
+  const m = { id: Date.now() + Math.random(), type: mode, name, x, y };
+  if (mode === 'cam') m.angle = 0;
+  markers.push(m);
   save();
 });
 
-// --- Render markers ---
+// --- Render markers + cables ---
 function renderMarkers() {
-  // remove old marker DOM
   origImgWrap.querySelectorAll('.marker').forEach(n => n.remove());
   for (const m of markers) {
     const el = document.createElement('div');
     el.className = 'marker ' + m.type;
-    const size = (m.type === 'wb') ? 28 : 20;
-    el.style.width = size + 'px';
-    el.style.height = size + 'px';
     el.style.left = (m.x * origScale) + 'px';
     el.style.top  = (m.y * origScale) + 'px';
     el.dataset.id = m.id;
+
+    if (m.type === 'cam') {
+      el.innerHTML = cameraSvg(m.angle || 0);
+      // rotation handle at lens tip (in marker-local coordinates)
+      const rot = document.createElement('div');
+      rot.className = 'rot-handle';
+      const angleRad = (m.angle || 0) * Math.PI / 180;
+      const r = 36; // distance from center
+      rot.style.left = (22 + Math.cos(angleRad) * r - 6) + 'px';
+      rot.style.top  = (22 + Math.sin(angleRad) * r - 6) + 'px';
+      rot.addEventListener('mousedown', ev => startRotate(ev, m));
+      el.appendChild(rot);
+    }
 
     if (m.name) {
       const lbl = document.createElement('span');
@@ -273,28 +456,126 @@ function renderMarkers() {
     x.textContent = '×';
     x.onclick = (ev) => {
       ev.stopPropagation();
-      markers = markers.filter(mm => mm.id !== m.id);
-      save();
+      deleteMarker(m.id);
     };
     el.appendChild(x);
 
-    // drag
+    if (mode === 'cable' && cableFromId === m.id) el.classList.add('cable-from');
+
     el.addEventListener('mousedown', startDrag);
+    el.addEventListener('click', ev => {
+      if (mode !== 'cable') return;
+      if (ev.target.classList.contains('x')) return;
+      if (ev.target.classList.contains('rot-handle')) return;
+      handleCableClick(m.id);
+    });
     origImgWrap.appendChild(el);
   }
+  renderCables();
   renderList();
+}
+
+function cameraSvg(angleDeg) {
+  // Body (square), lens (circle), viewing cone (path) — all centered in 44×44 viewBox
+  // angle 0 = lens to the right
+  return `
+    <svg viewBox="0 0 44 44" style="transform: rotate(${angleDeg}deg);">
+      <!-- viewing cone -->
+      <path d="M22,22 L44,8 L44,36 Z" fill="rgba(0,90,220,0.18)" stroke="rgba(0,90,220,0.4)" stroke-width="1"/>
+      <!-- camera body -->
+      <rect x="6" y="12" width="20" height="20" rx="3" fill="#06b" stroke="#fff" stroke-width="1.5"/>
+      <!-- lens -->
+      <circle cx="30" cy="22" r="7" fill="#222" stroke="#fff" stroke-width="1.5"/>
+      <circle cx="30" cy="22" r="3" fill="#06d"/>
+    </svg>
+  `;
+}
+
+function renderCables() {
+  cableLayer.innerHTML = '';
+  for (const c of cables) {
+    const a = markers.find(m => m.id === c.fromId);
+    const b = markers.find(m => m.id === c.toId);
+    if (!a || !b) continue;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', a.x * origScale);
+    line.setAttribute('y1', a.y * origScale);
+    line.setAttribute('x2', b.x * origScale);
+    line.setAttribute('y2', b.y * origScale);
+    line.dataset.id = c.id;
+    line.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (confirm("למחוק את הכבל?")) {
+        cables = cables.filter(cc => cc.id !== c.id);
+        save();
+      }
+    });
+    cableLayer.appendChild(line);
+  }
+}
+
+function handleCableClick(id) {
+  if (cableFromId == null) {
+    cableFromId = id;
+    updateModeLabel();
+    renderMarkers();
+    return;
+  }
+  if (cableFromId === id) {
+    cableFromId = null;
+    updateModeLabel();
+    renderMarkers();
+    return;
+  }
+  // create cable
+  cables.push({ id: Date.now() + Math.random(), fromId: cableFromId, toId: id });
+  cableFromId = null;
+  save();
+  updateModeLabel();
+}
+
+function deleteMarker(id) {
+  markers = markers.filter(m => m.id !== id);
+  cables = cables.filter(c => c.fromId !== id && c.toId !== id);
+  save();
 }
 
 function startDrag(e) {
   if (e.target.classList.contains('x')) return;
+  if (e.target.classList.contains('rot-handle')) return;
+  if (mode === 'cable') return; // cable mode uses clicks, not drags
   const id = parseFloat(this.dataset.id);
   const m = markers.find(mm => mm.id === id);
   if (!m) return;
   const startX = e.clientX, startY = e.clientY;
   const origX = m.x, origY = m.y;
+  let moved = false;
   function move(ev) {
+    moved = true;
     m.x = origX + (ev.clientX - startX) / origScale;
     m.y = origY + (ev.clientY - startY) / origScale;
+    renderMarkers();
+  }
+  function up() {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    if (moved) save();
+  }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+  e.preventDefault();
+}
+
+function startRotate(e, m) {
+  e.stopPropagation();
+  e.preventDefault();
+  function move(ev) {
+    const r = origImg.getBoundingClientRect();
+    const mx = (ev.clientX - r.left) / origScale;
+    const my = (ev.clientY - r.top)  / origScale;
+    const dx = mx - m.x;
+    const dy = my - m.y;
+    m.angle = Math.atan2(dy, dx) * 180 / Math.PI;
     renderMarkers();
   }
   function up() {
@@ -304,9 +585,9 @@ function startDrag(e) {
   }
   document.addEventListener('mousemove', move);
   document.addEventListener('mouseup', up);
-  e.preventDefault();
 }
 
+// --- List sidebar ---
 function renderList() {
   markerList.innerHTML = '';
   for (const m of markers) {
@@ -318,7 +599,9 @@ function renderList() {
     const meta = document.createElement('span');
     meta.style.fontSize = '11px';
     meta.style.color = '#666';
-    meta.textContent = `(${(m.x|0)},${(m.y|0)})`;
+    let metaText = `(${m.x|0},${m.y|0})`;
+    if (m.type === 'cam' && m.angle != null) metaText += ` ${m.angle|0}°`;
+    meta.textContent = metaText;
     li.appendChild(meta);
 
     const renameBtn = document.createElement('button');
@@ -331,25 +614,41 @@ function renderList() {
 
     const delBtn = document.createElement('button');
     delBtn.textContent = '✕';
-    delBtn.onclick = () => {
-      markers = markers.filter(mm => mm.id !== m.id);
-      save();
-    };
+    delBtn.onclick = () => deleteMarker(m.id);
     li.appendChild(delBtn);
 
     markerList.appendChild(li);
   }
-  jsonArea.value = JSON.stringify(markers, null, 2);
+  // append cables section if any
+  if (cables.length) {
+    const sep = document.createElement('li');
+    sep.style.borderBottom = 'none';
+    sep.innerHTML = `<strong style="color:#a0a;">כבלים (${cables.length})</strong>`;
+    markerList.appendChild(sep);
+    for (const c of cables) {
+      const a = markers.find(m => m.id === c.fromId);
+      const b = markers.find(m => m.id === c.toId);
+      const li = document.createElement('li');
+      li.style.fontSize = '12px';
+      li.innerHTML = `<span style="color:#a0a;">↔ ${a?.name || '?'} — ${b?.name || '?'}</span>`;
+      const del = document.createElement('button');
+      del.textContent = '✕';
+      del.onclick = () => { cables = cables.filter(cc => cc.id !== c.id); save(); };
+      li.appendChild(del);
+      markerList.appendChild(li);
+    }
+  }
+  jsonArea.value = JSON.stringify({ markers, cables }, null, 2);
 }
 
 function save() {
-  localStorage.setItem('kaplan_markers', JSON.stringify(markers));
+  localStorage.setItem('bluepin_state', JSON.stringify({ markers, cables }));
   renderMarkers();
 }
 
 // --- Export / Import / Clear ---
 document.getElementById('btnExport').onclick = () => {
-  const blob = new Blob([JSON.stringify(markers, null, 2)], {type: 'application/json'});
+  const blob = new Blob([JSON.stringify({ markers, cables }, null, 2)], {type: 'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'markers.json';
@@ -364,7 +663,9 @@ document.getElementById('btnImport').onclick = () => {
     const r = new FileReader();
     r.onload = () => {
       try {
-        markers = JSON.parse(r.result);
+        const data = JSON.parse(r.result);
+        if (Array.isArray(data)) { markers = data; cables = []; }
+        else { markers = data.markers || []; cables = data.cables || []; }
         save();
       } catch (err) { alert("שגיאת ייבוא: " + err.message); }
     };
@@ -373,47 +674,53 @@ document.getElementById('btnImport').onclick = () => {
   input.click();
 };
 document.getElementById('btnClear').onclick = () => {
-  if (confirm("למחוק את כל הנקודות?")) { markers = []; save(); }
+  if (confirm("למחוק את כל הנקודות והכבלים?")) {
+    markers = []; cables = []; save();
+  }
 };
-document.getElementById('btnRender').onclick = () => {
-  // Open a preview window with the final composition
-  renderFinal();
-};
+document.getElementById('btnRender').onclick = () => renderFinal();
 
-// --- Final render (open new window with the composed image) ---
+// --- Final composed PNG ---
 function renderFinal() {
-  const W = origImg.naturalWidth + 1300;
+  if (!origImg.naturalWidth) { alert("העלה PDF תחילה"); return; }
+  const W = origImg.naturalWidth;
   const H = origImg.naturalHeight;
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-  // draw original
-  ctx.drawImage(origImg, 0, 0, origImg.naturalWidth, origImg.naturalHeight);
-  // cameras (blue)
-  for (const m of markers.filter(mm => mm.type === 'cam')) {
+  ctx.drawImage(origImg, 0, 0, W, H);
+
+  // cables first (under markers)
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  for (const c of cables) {
+    const a = markers.find(m => m.id === c.fromId);
+    const b = markers.find(m => m.id === c.toId);
+    if (!a || !b) continue;
     ctx.beginPath();
-    ctx.fillStyle = 'rgba(0,90,220,0.95)';
-    ctx.arc(m.x, m.y, 22, 0, Math.PI*2);
-    ctx.fill();
-    ctx.strokeStyle = '#06b'; ctx.lineWidth = 3; ctx.stroke();
-    if (m.name) drawLabel(ctx, m.name, m.x+35, m.y, '#06b');
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+
+  // cameras
+  for (const m of markers.filter(mm => mm.type === 'cam')) {
+    drawCameraOnCanvas(ctx, m);
+    if (m.name) drawLabel(ctx, m.name, m.x + 40, m.y + 30, '#06b');
   }
   // WBs (red)
   for (const m of markers.filter(mm => mm.type === 'wb')) {
     ctx.beginPath();
     ctx.strokeStyle = 'rgba(220,20,20,1)';
     ctx.lineWidth = 6;
-    ctx.arc(m.x, m.y, 28, 0, Math.PI*2);
+    ctx.arc(m.x, m.y, 22, 0, Math.PI*2);
     ctx.stroke();
     ctx.beginPath();
     ctx.fillStyle = 'rgba(220,20,20,1)';
     ctx.arc(m.x, m.y, 6, 0, Math.PI*2);
     ctx.fill();
-    if (m.name) drawLabel(ctx, m.name, m.x+35, m.y, '#b00');
+    if (m.name) drawLabel(ctx, m.name, m.x + 28, m.y, '#b00');
   }
-  // Legend on right
-  drawLegend(ctx, origImg.naturalWidth, 0, 1300, H);
 
   const dataURL = canvas.toDataURL('image/png');
   const w = window.open('');
@@ -424,86 +731,53 @@ function renderFinal() {
     </body>`);
 }
 
+function drawCameraOnCanvas(ctx, m) {
+  const angleRad = (m.angle || 0) * Math.PI / 180;
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  ctx.rotate(angleRad);
+  // viewing cone
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(34, -14);
+  ctx.lineTo(34, 14);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(0,90,220,0.18)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,90,220,0.4)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // body
+  ctx.fillStyle = '#06b';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-16, -10, 20, 20, 3);
+  ctx.fill(); ctx.stroke();
+  // lens
+  ctx.beginPath();
+  ctx.fillStyle = '#222';
+  ctx.arc(8, 0, 7, 0, Math.PI*2);
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath();
+  ctx.fillStyle = '#06d';
+  ctx.arc(8, 0, 3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawLabel(ctx, text, x, y, color) {
-  ctx.font = "bold 36px 'Arial Hebrew', Arial, sans-serif";
+  ctx.font = "bold 22px 'Arial Hebrew', Arial, sans-serif";
   const m = ctx.measureText(text);
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(x-4, y-22, m.width+8, 44);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillRect(x - 4, y - 14, m.width + 8, 28);
   ctx.fillStyle = color;
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y);
 }
 
-function drawLegend(ctx, x0, y0, w, h) {
-  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-  ctx.strokeRect(x0+20, y0+20, w-40, h-40);
-
-  ctx.fillStyle = '#b00';
-  ctx.font = "bold 58px 'Arial Hebrew', Arial, sans-serif";
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillText("מקרא וולבוקס", x0 + w/2, y0 + 50);
-
-  // Color keys
-  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-  let ky = y0 + 170;
-  ctx.fillStyle = '#b00';
-  ctx.beginPath(); ctx.arc(x0 + w - 50, ky+10, 18, 0, Math.PI*2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(x0 + w - 50, ky+10, 6, 0, Math.PI*2); ctx.fill();
-  ctx.font = "32px 'Arial Hebrew', Arial, sans-serif";
-  ctx.fillText("מיקום וולבוקס", x0 + w - 90, ky+10);
-
-  ky += 70;
-  ctx.fillStyle = '#06b';
-  ctx.beginPath(); ctx.arc(x0 + w - 50, ky+10, 18, 0, Math.PI*2); ctx.fill();
-  ctx.fillText("מיקום מצלמה", x0 + w - 90, ky+10);
-
-  // Separator
-  ctx.beginPath();
-  ctx.moveTo(x0 + 40, ky + 60);
-  ctx.lineTo(x0 + w - 40, ky + 60);
-  ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Entries
-  const ENTRIES = [
-    ["WB MAIN A", "7 * ארון תקשורת 44U (חצר משק)"],
-    ["WB A",      "1 * ארון תקשורת 15U (מצלמות ראשיות פלטפורמה)"],
-    ["WB B",      "1 * ארון תקשורת 6U (מעבר שחקנים)"],
-    ["WB C",      "4 * ארון רצפתי שקוע (פינות פרקט זירה)"],
-    ["WB D",      "1 * ארון תקשורת 6U (קיר יציע מתקפל)"],
-    ["WB MAIN B", "4 * ארון תקשורת 44U (חדר תקשורת TV מפלס 0:0)"],
-    ["WB MAIN C", "1 * ארון תקשורת 44U (חדר תקשורת TV מפלס 16)"],
-    ["WB Z",      "1 * ארון תקשורת 6U (חדר תקשורת TV קומה 0)"],
-    ["WB M",      "1 * ארון תקשורת 6U (חדר בזק כניסה מהרחוב)"],
-    ["WB E",      "1 * צינור ללא ארון (מצלמת BEAUTY)"],
-    ["WB P",      "1 * צינור ללא ארון (מצלמת פיקסלוט)"],
-    ["WB F",      "1 * ארון תקשורת 6U (תא צפייה / אולפן)"],
-    ["WB G",      "1 * ארון תקשורת 6U (הלבשת שחקנים)"],
-    ["WB T",      "1 * צינור ללא ארון (מצלמת TOP אמצע מגרש תקרה)"],
-    ["WB I",      "1 * ארון תקשורת 6U (עיתונאים)"],
-    ["WB H",      "1 * ארון תקשורת 6U (מנוחת שחקנים)"],
-    ["WB K",      "1 * ארון תקשורת 15U (פינות פרקט זירה)"],
-  ];
-  let y = ky + 90;
-  ctx.font = "28px 'Arial Hebrew', Arial, sans-serif";
-  for (const [name, desc] of ENTRIES) {
-    ctx.font = "bold 30px Arial, sans-serif";
-    ctx.fillStyle = '#b00';
-    ctx.textAlign = 'right';
-    ctx.fillText(name, x0 + w - 40, y);
-    const nameW = ctx.measureText(name).width;
-    ctx.font = "28px 'Arial Hebrew', Arial, sans-serif";
-    ctx.fillStyle = '#000';
-    ctx.fillText("– " + desc, x0 + w - 40 - nameW - 15, y);
-    y += 65;
-  }
-}
-
 // --- Initial render ---
-origImg.onload = () => { applyZoom(); };
-refImg.onload  = () => { applyZoom(); };
-if (origImg.complete) applyZoom();
+updateModeLabel();
 renderMarkers();
 </script>
 
