@@ -112,19 +112,49 @@
   }
   .legend-side h3 { margin: 0 0 8px 0; font-size: 14px; }
   .legend-side ul { padding: 0 16px 0 0; margin: 0; list-style: none; }
-  .legend-side li {
-    padding: 4px 0; border-bottom: 1px solid #eee; font-size: 13px;
-    display: flex; flex-direction: column; align-items: stretch; gap: 2px;
-  }
-  .legend-side li .li-top {
-    display: flex; justify-content: space-between; align-items: center; gap: 4px;
-  }
-  .legend-side li .li-contents {
-    font-size: 11px; color: #666; padding-right: 8px; line-height: 1.4;
-  }
-  .legend-side .wb-name  { color: #b00; font-weight: bold; }
-  .legend-side .cam-name { color: #06b; font-weight: bold; }
+  .legend-side ul { padding: 0; margin: 0; list-style: none; }
   .legend-side button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
+
+  .marker-card {
+    margin-bottom: 8px; border-radius: 6px;
+    border: 1px solid #ddd; background: #fff;
+    overflow: hidden;
+  }
+  .marker-card.wb-card  { background: #fff7f7; border-color: #fbd2d2; }
+  .marker-card.cam-card { background: #f4f9ff; border-color: #cfe0f5; }
+  .marker-card .card-head {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 6px 8px;
+  }
+  .marker-card.wb-card .card-head  { border-right: 4px solid #c33; }
+  .marker-card.cam-card .card-head { border-right: 4px solid #06b; }
+  .marker-card .name {
+    font-weight: bold; font-size: 14px;
+  }
+  .marker-card.wb-card  .name { color: #b00; }
+  .marker-card.cam-card .name { color: #06b; }
+  .marker-card .meta { font-size: 10px; color: #999; }
+  .marker-card .actions { display: flex; gap: 4px; margin-top: 2px; }
+  .marker-card .actions button {
+    background: #fff; border: 1px solid #ccc; padding: 1px 6px;
+    font-size: 11px; border-radius: 3px;
+  }
+  .marker-card .actions button:hover { background: #f0f0f0; }
+
+  .marker-card.wb-card { display: grid; grid-template-columns: 130px 1fr; }
+  .marker-card.wb-card .contents-list {
+    padding: 6px 8px; border-right: 1px dashed #eecccc;
+    font-size: 12px; color: #333;
+    list-style: none; margin: 0;
+  }
+  .marker-card.wb-card .contents-list li {
+    padding: 2px 0; border: 0; display: block;
+  }
+  .marker-card.wb-card .contents-list .item-name { color: #222; }
+  .marker-card.wb-card .contents-list .item-qty  { color: #999; font-size: 11px; margin-right: 4px; }
+  .marker-card.wb-card .contents-list .empty {
+    color: #b88; font-style: italic; font-size: 11px;
+  }
 
   .side-actions { display: flex; gap: 6px; margin-bottom: 8px; }
   .side-btn {
@@ -903,26 +933,31 @@ function startCableDrag(e, cam) {
 function renderList() {
   markerList.innerHTML = '';
   for (const m of markers) {
-    const li = document.createElement('li');
+    const card = document.createElement('li');
+    card.className = 'marker-card ' + (m.type === 'wb' ? 'wb-card' : 'cam-card');
 
-    const top = document.createElement('div');
-    top.className = 'li-top';
+    // head: name + meta + actions
+    const head = document.createElement('div');
+    head.className = 'card-head';
 
-    const span = document.createElement('span');
-    span.className = (m.type === 'wb') ? 'wb-name' : 'cam-name';
-    span.textContent = m.name || '(ללא שם)';
-    top.appendChild(span);
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = m.name || '(ללא שם)';
+    head.appendChild(name);
 
-    const meta = document.createElement('span');
-    meta.style.fontSize = '11px';
-    meta.style.color = '#666';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
     let metaText = `(${m.x|0},${m.y|0})`;
     if (m.type === 'cam' && m.angle != null) metaText += ` ${m.angle|0}°`;
     meta.textContent = metaText;
-    top.appendChild(meta);
+    head.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
 
     const renameBtn = document.createElement('button');
     renameBtn.textContent = '✎';
+    renameBtn.title = 'שנה שם';
     renameBtn.onclick = () => {
       if (m.type === 'wb') {
         openContentsPanel(m.id, true);
@@ -931,23 +966,44 @@ function renderList() {
         if (v != null) { m.name = v; save(); renderMarkers(); renderList(); }
       }
     };
-    top.appendChild(renameBtn);
+    actions.appendChild(renameBtn);
 
     const delBtn = document.createElement('button');
     delBtn.textContent = '✕';
+    delBtn.title = 'מחק';
     delBtn.onclick = () => deleteMarker(m.id);
-    top.appendChild(delBtn);
+    actions.appendChild(delBtn);
 
-    li.appendChild(top);
+    head.appendChild(actions);
+    card.appendChild(head);
 
-    if (m.type === 'wb' && Array.isArray(m.contents) && m.contents.length) {
-      const cnt = document.createElement('div');
-      cnt.className = 'li-contents';
-      cnt.textContent = m.contents.map(c => `${c.name} ×${c.qty}`).join(', ');
-      li.appendChild(cnt);
+    // WB-only: contents column
+    if (m.type === 'wb') {
+      const list = document.createElement('ul');
+      list.className = 'contents-list';
+      const items = m.contents || [];
+      if (items.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = '— ריק —';
+        list.appendChild(li);
+      } else {
+        for (const it of items) {
+          const li = document.createElement('li');
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'item-name';
+          nameSpan.textContent = it.name;
+          const qtySpan = document.createElement('span');
+          qtySpan.className = 'item-qty';
+          qtySpan.textContent = '×' + it.qty;
+          li.append(nameSpan, qtySpan);
+          list.appendChild(li);
+        }
+      }
+      card.appendChild(list);
     }
 
-    markerList.appendChild(li);
+    markerList.appendChild(card);
   }
 }
 
