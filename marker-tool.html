@@ -170,8 +170,10 @@
     flex: 1; padding: 8px 10px; font-size: 14px; font-weight: bold;
     border: 0; border-radius: 5px; cursor: pointer; color: #fff;
   }
-  .side-btn.add-wb  { background: #d40; }
-  .side-btn.add-cam { background: #06d; }
+  .side-btn.add-wb    { background: #d40; }
+  .side-btn.add-cam   { background: #06d; }
+  .side-btn.add-cable { background: #a0a; }
+  .side-btn.add-cable.mode-active { outline: 3px solid #fff; box-shadow: 0 0 0 2px #a0a; }
   .side-btn.undo    { background: #555; }
   .side-btn.undo:disabled { background: #ccc; cursor: not-allowed; }
   .side-btn.logo-upload {
@@ -190,12 +192,18 @@
   }
   #logoOverlay {
     position: absolute; top: 8px; right: 8px;
-    max-width: 200px; max-height: 100px;
-    background: rgba(255,255,255,0.9); padding: 4px;
+    width: 200px; height: 100px;
+    background: rgba(255,255,255,0.92); padding: 4px;
     border: 1px solid #ccc; border-radius: 4px;
     pointer-events: none; z-index: 3;
+    box-sizing: border-box; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
   }
-  #logoOverlay img { display: block; max-width: 100%; max-height: 100%; }
+  #logoOverlay img {
+    display: block; width: auto; height: auto;
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+  }
   textarea {
     width: 100%; height: 100px; margin-top: 10px; font-family: monospace; font-size: 11px;
   }
@@ -379,6 +387,9 @@
     <div class="side-actions">
       <button class="side-btn add-wb"  id="quickAddWb"  title="הוסף Wallbox במרכז" aria-label="הוסף Wallbox">＋ WB</button>
       <button class="side-btn add-cam" id="quickAddCam" title="הוסף מצלמה במרכז" aria-label="הוסף מצלמה">＋ מצלמה</button>
+    </div>
+    <div class="side-actions">
+      <button class="side-btn add-cable" id="sideCable" title="מצב כבל: קליק על שני מרקרים" aria-label="מצב כבל">↔ כבל</button>
     </div>
     <div class="side-actions">
       <button class="side-btn undo" id="btnUndo" title="בטל (Ctrl+Z)" aria-label="בטל" disabled>↶ בטל</button>
@@ -1047,6 +1058,15 @@ function addQuickMarker(type) {
 document.getElementById('quickAddWb').onclick  = () => addQuickMarker('wb');
 document.getElementById('quickAddCam').onclick = () => addQuickMarker('cam');
 
+// Cable mode toggle (click two markers to connect)
+document.getElementById('sideCable').onclick = () => {
+  mode = (mode === 'cable') ? null : 'cable';
+  cableFromId = null;
+  document.getElementById('sideCable').classList.toggle('mode-active', mode === 'cable');
+  updateModeLabel();
+  renderMarkers();
+};
+
 // --- Undo ---
 document.getElementById('btnUndo').onclick = undo;
 document.addEventListener('keydown', e => {
@@ -1156,11 +1176,11 @@ async function renderFinal() {
     return;
   }
   const { jsPDF } = window.jspdf;
-  const orientation = W > H ? 'portrait' : 'landscape';
+  const orientation = W >= H ? 'landscape' : 'portrait';
   const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const margin = 8;
+  const margin = 3;
   const fitW = pageW - margin * 2;
   const fitH = pageH - margin * 2;
   const s = Math.min(fitW / W, fitH / H);
