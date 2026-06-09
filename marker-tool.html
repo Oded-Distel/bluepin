@@ -1040,6 +1040,64 @@ function removeContentItem(idx) {
   renderMarkers();
 }
 
+let cpOptActiveIdx = -1;
+
+function cpRenderOptions() {
+  const m = getOpenWb();
+  const used = new Set((m?.contents || []).map(c => c.name.toLowerCase()));
+  const q = cpAddInput.value.trim().toLowerCase();
+  const matches = DEFAULT_CONTENT_ITEMS
+    .filter(name => !used.has(name.toLowerCase()))
+    .filter(name => q === '' || name.toLowerCase().startsWith(q));
+  cpOptions.innerHTML = '';
+  if (matches.length === 0) { cpOptions.hidden = true; cpOptActiveIdx = -1; return; }
+  matches.forEach((name, i) => {
+    const opt = document.createElement('div');
+    opt.textContent = name;
+    if (i === cpOptActiveIdx) opt.classList.add('cp-opt-active');
+    opt.onmousedown = (ev) => {
+      ev.preventDefault();
+      addContentItem(name);
+      cpAddInput.value = '';
+      cpRenderOptions();
+    };
+    cpOptions.appendChild(opt);
+  });
+  cpOptions.hidden = false;
+}
+
+cpAddInput.addEventListener('focus', () => { cpOptActiveIdx = -1; cpRenderOptions(); });
+cpAddInput.addEventListener('input', () => { cpOptActiveIdx = -1; cpRenderOptions(); });
+cpAddInput.addEventListener('blur',  () => { setTimeout(() => { cpOptions.hidden = true; }, 120); });
+cpAddInput.addEventListener('keydown', (e) => {
+  const opts = Array.from(cpOptions.querySelectorAll('div'));
+  if (e.key === 'ArrowDown') {
+    cpOptActiveIdx = Math.min(opts.length - 1, cpOptActiveIdx + 1);
+    cpRenderOptions();
+    e.preventDefault();
+  } else if (e.key === 'ArrowUp') {
+    cpOptActiveIdx = Math.max(-1, cpOptActiveIdx - 1);
+    cpRenderOptions();
+    e.preventDefault();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (cpOptActiveIdx >= 0 && opts[cpOptActiveIdx]) {
+      addContentItem(opts[cpOptActiveIdx].textContent);
+    } else if (cpAddInput.value.trim()) {
+      addContentItem(cpAddInput.value);
+    }
+    cpAddInput.value = '';
+    cpOptActiveIdx = -1;
+    cpRenderOptions();
+  } else if (e.key === 'Escape') {
+    cpOptions.hidden = true;
+    cpAddInput.value = '';
+    cpOptActiveIdx = -1;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+});
+
 // --- Initial render ---
 updateModeLabel();
 renderMarkers();
