@@ -114,11 +114,49 @@
   .legend-side ul { padding: 0 16px 0 0; margin: 0; list-style: none; }
   .legend-side li {
     padding: 4px 0; border-bottom: 1px solid #eee; font-size: 13px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+  }
+  .legend-side li .li-top {
     display: flex; justify-content: space-between; align-items: center; gap: 4px;
+  }
+  .legend-side li .li-contents {
+    font-size: 11px; color: #666; padding-right: 8px; line-height: 1.4;
   }
   .legend-side .wb-name  { color: #b00; font-weight: bold; }
   .legend-side .cam-name { color: #06b; font-weight: bold; }
   .legend-side button { font-size: 11px; padding: 2px 6px; cursor: pointer; }
+
+  .side-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+  .side-btn {
+    flex: 1; padding: 8px 10px; font-size: 14px; font-weight: bold;
+    border: 0; border-radius: 5px; cursor: pointer; color: #fff;
+  }
+  .side-btn.add-wb  { background: #d40; }
+  .side-btn.add-cam { background: #06d; }
+  .side-btn.undo    { background: #555; }
+  .side-btn.undo:disabled { background: #ccc; cursor: not-allowed; }
+  .side-btn.logo-upload {
+    display: inline-block; background: #888; text-align: center;
+    flex: 1; padding: 8px 10px; font-size: 13px;
+  }
+  .logo-box { margin-bottom: 10px; }
+  #logoThumb {
+    margin-top: 6px; display: flex; align-items: center; gap: 6px;
+    background: #f5f5f5; padding: 4px; border-radius: 4px;
+  }
+  #logoThumb img { max-width: 80px; max-height: 40px; }
+  #logoThumb button {
+    background: transparent; color: #c33; border: 0;
+    font-size: 18px; cursor: pointer;
+  }
+  #logoOverlay {
+    position: absolute; top: 8px; right: 8px;
+    max-width: 200px; max-height: 100px;
+    background: rgba(255,255,255,0.9); padding: 4px;
+    border: 1px solid #ccc; border-radius: 4px;
+    pointer-events: none; z-index: 3;
+  }
+  #logoOverlay img { display: block; max-width: 100%; max-height: 100%; }
   textarea {
     width: 100%; height: 100px; margin-top: 10px; font-family: monospace; font-size: 11px;
   }
@@ -296,11 +334,29 @@
       <div class="img-wrap" id="origImgWrap" style="display:none;">
         <img id="origImg" alt="תכנית">
         <svg id="cableLayer"></svg>
+        <div id="logoOverlay" hidden><img alt="logo"></div>
       </div>
     </div>
   </div>
 
   <div class="legend-side">
+    <div class="side-actions">
+      <button class="side-btn add-wb"  id="quickAddWb"  title="הוסף Wallbox במרכז" aria-label="הוסף Wallbox">＋ WB</button>
+      <button class="side-btn add-cam" id="quickAddCam" title="הוסף מצלמה במרכז" aria-label="הוסף מצלמה">＋ מצלמה</button>
+    </div>
+    <div class="side-actions">
+      <button class="side-btn undo" id="btnUndo" title="בטל (Ctrl+Z)" aria-label="בטל" disabled>↶ בטל</button>
+    </div>
+    <div class="logo-box">
+      <label class="side-btn logo-upload">
+        העלה לוגו
+        <input id="logoInput" type="file" accept="image/*" hidden>
+      </label>
+      <div id="logoThumb" hidden>
+        <img alt="logo">
+        <button id="btnLogoRemove" title="הסר לוגו" aria-label="הסר לוגו">×</button>
+      </div>
+    </div>
     <h3>הנקודות שסומנו</h3>
     <ul id="markerList"></ul>
   </div>
@@ -350,16 +406,20 @@ const stored = JSON.parse(localStorage.getItem('bluepin_state') || 'null');
 // migration: old format was an array of markers
 let markers = [];
 let cables = [];
+let logo = null; // { data: 'data:image/...', w, h }
 if (Array.isArray(stored)) {
   markers = stored;
 } else if (stored && typeof stored === 'object') {
   markers = stored.markers || [];
   cables = stored.cables || [];
+  logo = stored.logo || null;
 }
 // migration: ensure every WB has a contents array
 for (const m of markers) {
   if (m.type === 'wb' && !Array.isArray(m.contents)) m.contents = [];
 }
+let undoStack = [];
+const UNDO_LIMIT = 50;
 
 // --- DOM refs ---
 const origImg = document.getElementById('origImg');
@@ -811,14 +871,27 @@ function startCableDrag(e, cam) {
     document.removeEventListener('mouseup', up);
     preview.remove();
     if (hoveredWb) hoveredWb.classList.remove('cable-target');
+    let wbId = null;
     const wbEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.marker.wb');
-    if (!wbEl) return;
-    const wbId = parseFloat(wbEl.dataset.id);
-    if (wbId === cam.id) return;
+    if (wbEl) {
+      wbId = parseFloat(wbEl.dataset.id);
+      if (wbId === cam.id) return; // safety
+    } else {
+      // empty space inside canvas → create a new WB there
+      const overImg = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('#origImgWrap');
+      if (!overImg) return; // dropped outside canvas — cancel
+      const r = origImg.getBoundingClientRect();
+      const x = (ev.clientX - r.left) / origScale;
+      const y = (ev.clientY - r.top)  / origScale;
+      const newId = Date.now() + Math.random();
+      const name = 'WB ' + (markers.filter(m => m.type === 'wb').length + 1);
+      markers.push({ id: newId, type: 'wb', name, x, y, contents: [] });
+      wbId = newId;
+    }
     if (cables.some(c =>
       (c.fromId === cam.id && c.toId === wbId) ||
       (c.fromId === wbId && c.toId === cam.id)
-    )) return;
+    )) { save(); return; }
     cables.push({ id: Date.now() + Math.random(), fromId: cam.id, toId: wbId });
     save();
   }
@@ -831,17 +904,22 @@ function renderList() {
   markerList.innerHTML = '';
   for (const m of markers) {
     const li = document.createElement('li');
+
+    const top = document.createElement('div');
+    top.className = 'li-top';
+
     const span = document.createElement('span');
     span.className = (m.type === 'wb') ? 'wb-name' : 'cam-name';
     span.textContent = m.name || '(ללא שם)';
-    li.appendChild(span);
+    top.appendChild(span);
+
     const meta = document.createElement('span');
     meta.style.fontSize = '11px';
     meta.style.color = '#666';
     let metaText = `(${m.x|0},${m.y|0})`;
     if (m.type === 'cam' && m.angle != null) metaText += ` ${m.angle|0}°`;
     meta.textContent = metaText;
-    li.appendChild(meta);
+    top.appendChild(meta);
 
     const renameBtn = document.createElement('button');
     renameBtn.textContent = '✎';
@@ -853,20 +931,56 @@ function renderList() {
         if (v != null) { m.name = v; save(); renderMarkers(); renderList(); }
       }
     };
-    li.appendChild(renameBtn);
+    top.appendChild(renameBtn);
 
     const delBtn = document.createElement('button');
     delBtn.textContent = '✕';
     delBtn.onclick = () => deleteMarker(m.id);
-    li.appendChild(delBtn);
+    top.appendChild(delBtn);
+
+    li.appendChild(top);
+
+    if (m.type === 'wb' && Array.isArray(m.contents) && m.contents.length) {
+      const cnt = document.createElement('div');
+      cnt.className = 'li-contents';
+      cnt.textContent = m.contents.map(c => `${c.name} ×${c.qty}`).join(', ');
+      li.appendChild(cnt);
+    }
 
     markerList.appendChild(li);
   }
 }
 
 function save() {
-  localStorage.setItem('bluepin_state', JSON.stringify({ markers, cables }));
+  const prev = localStorage.getItem('bluepin_state');
+  if (prev) {
+    undoStack.push(prev);
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    updateUndoBtn();
+  }
+  localStorage.setItem('bluepin_state', JSON.stringify({ markers, cables, logo }));
   renderMarkers();
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  const prev = undoStack.pop();
+  localStorage.setItem('bluepin_state', prev);
+  const data = JSON.parse(prev);
+  markers = data.markers || [];
+  cables  = data.cables  || [];
+  logo    = data.logo    || null;
+  for (const m of markers) if (m.type === 'wb' && !Array.isArray(m.contents)) m.contents = [];
+  closeContentsPanel();
+  renderMarkers();
+  renderList();
+  updateLogoPreview();
+  updateUndoBtn();
+}
+
+function updateUndoBtn() {
+  const btn = document.getElementById('btnUndo');
+  if (btn) btn.disabled = undoStack.length === 0;
 }
 
 // --- Clear ---
@@ -875,10 +989,76 @@ document.getElementById('btnClear').onclick = () => {
     markers = []; cables = []; save();
   }
 };
-document.getElementById('btnRender').onclick = () => renderFinal();
+document.getElementById('btnRender').onclick = () => {
+  renderFinal().catch(err => alert("שגיאת ייצוא PDF: " + (err.message || err)));
+};
+
+// --- Quick-add buttons (side panel) ---
+function addQuickMarker(type) {
+  if (!origImg.naturalWidth) { alert("העלה PDF תחילה"); return; }
+  const W = origImg.naturalWidth, H = origImg.naturalHeight;
+  // small random offset so a stack of clicks doesn't pile on the exact center
+  const jitter = () => (Math.random() - 0.5) * 60;
+  const m = { id: Date.now() + Math.random(), type, name: '', x: W/2 + jitter(), y: H/2 + jitter() };
+  if (type === 'wb')  { m.name = 'WB ' + (markers.filter(x => x.type === 'wb').length + 1);  m.contents = []; }
+  if (type === 'cam') { m.name = 'Cam ' + (markers.filter(x => x.type === 'cam').length + 1); m.angle = 0; }
+  markers.push(m);
+  save();
+}
+document.getElementById('quickAddWb').onclick  = () => addQuickMarker('wb');
+document.getElementById('quickAddCam').onclick = () => addQuickMarker('cam');
+
+// --- Undo ---
+document.getElementById('btnUndo').onclick = undo;
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return; // let native undo work in fields
+    e.preventDefault();
+    undo();
+  }
+});
+
+// --- Logo ---
+const logoOverlay = document.getElementById('logoOverlay');
+const logoThumb   = document.getElementById('logoThumb');
+function updateLogoPreview() {
+  if (logo && logo.data) {
+    logoOverlay.querySelector('img').src = logo.data;
+    logoOverlay.hidden = false;
+    logoThumb.querySelector('img').src = logo.data;
+    logoThumb.hidden = false;
+  } else {
+    logoOverlay.hidden = true;
+    logoThumb.hidden = true;
+  }
+}
+document.getElementById('logoInput').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      logo = { data: reader.result, w: img.naturalWidth, h: img.naturalHeight };
+      save();
+      updateLogoPreview();
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(f);
+  e.target.value = ''; // allow re-uploading same file later
+});
+document.getElementById('btnLogoRemove').onclick = () => {
+  logo = null;
+  save();
+  updateLogoPreview();
+};
+updateLogoPreview();
+updateUndoBtn();
 
 // --- Final composed PNG ---
-function renderFinal() {
+async function renderFinal() {
   if (!origImg.naturalWidth) { alert("העלה PDF תחילה"); return; }
   const W = origImg.naturalWidth;
   const H = origImg.naturalHeight;
@@ -919,12 +1099,97 @@ function renderFinal() {
     if (m.name) drawLabel(ctx, m.name, m.x + 28, m.y, '#b00');
   }
 
+  // logo (top-right of main page)
+  if (logo && logo.data) {
+    const img = await loadImg(logo.data);
+    const maxW = Math.min(W * 0.18, 400), maxH = Math.min(H * 0.12, 200);
+    const s = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
+    const lw = img.naturalWidth * s, lh = img.naturalHeight * s;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillRect(W - lw - 30, 18, lw + 16, lh + 12);
+    ctx.drawImage(img, W - lw - 22, 24, lw, lh);
+    ctx.restore();
+  }
+
   const dataURL = canvas.toDataURL('image/png');
   const { jsPDF } = window.jspdf;
   const orientation = W > H ? 'landscape' : 'portrait';
   const pdf = new jsPDF({ orientation, unit: 'px', format: [W, H], hotfixes: ['px_scaling'] });
   pdf.addImage(dataURL, 'PNG', 0, 0, W, H);
+
+  // second page: WB contents listing (rendered to canvas so Hebrew works)
+  const wbs = markers.filter(m => m.type === 'wb');
+  if (wbs.length) {
+    const pageCanvas = renderContentsPage(wbs, W, H);
+    pdf.addPage([W, H], orientation);
+    pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 0, 0, W, H);
+  }
+
   pdf.save('תכנית-וולבוקס.pdf');
+}
+
+function loadImg(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+function renderContentsPage(wbs, W, H) {
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+
+  // title
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#222';
+  ctx.font = 'bold 42px Arial';
+  ctx.fillText('תכולת Wallboxes', W - 60, 80);
+  ctx.font = '20px Arial';
+  ctx.fillStyle = '#666';
+  ctx.fillText(new Date().toLocaleDateString('he-IL'), W - 60, 115);
+
+  // columns layout
+  const cols = wbs.length > 8 ? 2 : 1;
+  const colW = (W - 120) / cols;
+  let col = 0, y = 170;
+  const lineH = 28;
+  const blockGap = 30;
+
+  ctx.font = '22px Arial';
+  for (const wb of wbs) {
+    const colX = W - 60 - col * colW;
+    const items = wb.contents || [];
+    const blockH = lineH * 2 + items.length * lineH + blockGap;
+    if (y + blockH > H - 60 && col < cols - 1) { col++; y = 170; }
+
+    // WB header
+    ctx.fillStyle = '#b00';
+    ctx.font = 'bold 26px Arial';
+    ctx.fillText(wb.name || '(ללא שם)', colX, y);
+    y += lineH;
+
+    // items or empty
+    ctx.font = '20px Arial';
+    if (items.length === 0) {
+      ctx.fillStyle = '#999';
+      ctx.fillText('— אין פריטים —', colX - 20, y);
+      y += lineH;
+    } else {
+      ctx.fillStyle = '#222';
+      for (const it of items) {
+        ctx.fillText(`• ${it.name} ×${it.qty}`, colX - 20, y);
+        y += lineH;
+      }
+    }
+    y += blockGap;
+  }
+  return canvas;
 }
 
 function drawCameraOnCanvas(ctx, m) {
