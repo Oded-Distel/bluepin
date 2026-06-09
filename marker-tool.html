@@ -91,6 +91,17 @@
     cursor: grab;
     z-index: 4;
   }
+  .marker .cable-handle {
+    position: absolute;
+    width: 14px; height: 14px;
+    background: rgba(170, 0, 170, 0.85); border: 2px solid #fff;
+    border-radius: 50%;
+    cursor: crosshair;
+    z-index: 6;
+    box-shadow: 0 0 0 1px #a0a;
+  }
+  .marker .cable-handle:hover { background: #f0f; transform: scale(1.15); }
+  .marker.wb.cable-target { outline: 4px solid #a0a; outline-offset: 2px; border-radius: 50%; }
   .marker.cable-from { outline: 4px solid #f0f; outline-offset: 2px; border-radius: 50%; }
 
   #zoomControls { display: flex; gap: 6px; padding: 4px 8px; background: #eee; font-size: 12px;}
@@ -597,6 +608,15 @@ function renderMarkers() {
       rot.style.top  = (22 + Math.sin(angleRad) * r - 6) + 'px';
       rot.addEventListener('mousedown', ev => startRotate(ev, m));
       el.appendChild(rot);
+      // cable handle on the lens (drag to a WB to create cable)
+      const cab = document.createElement('div');
+      cab.className = 'cable-handle';
+      cab.title = 'גרור ל-Wallbox כדי לחבר כבל';
+      const lensR = 8; // distance from center to lens, in viewBox units (44px marker)
+      cab.style.left = (22 + Math.cos(angleRad) * lensR - 7) + 'px';
+      cab.style.top  = (22 + Math.sin(angleRad) * lensR - 7) + 'px';
+      cab.addEventListener('mousedown', ev => startCableDrag(ev, m));
+      el.appendChild(cab);
     }
 
     if (m.type === 'wb' && Array.isArray(m.contents) && m.contents.length) {
@@ -718,6 +738,7 @@ function deleteMarker(id) {
 function startDrag(e) {
   if (e.target.classList.contains('x')) return;
   if (e.target.classList.contains('rot-handle')) return;
+  if (e.target.classList.contains('cable-handle')) return;
   if (mode === 'cable') return; // cable mode uses clicks, not drags
   const id = parseFloat(this.dataset.id);
   const m = markers.find(mm => mm.id === id);
@@ -756,6 +777,49 @@ function startRotate(e, m) {
   function up() {
     document.removeEventListener('mousemove', move);
     document.removeEventListener('mouseup', up);
+    save();
+  }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+
+function startCableDrag(e, cam) {
+  e.stopPropagation();
+  e.preventDefault();
+  const preview = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  preview.setAttribute('x1', cam.x * origScale);
+  preview.setAttribute('y1', cam.y * origScale);
+  preview.setAttribute('x2', cam.x * origScale);
+  preview.setAttribute('y2', cam.y * origScale);
+  preview.setAttribute('stroke', '#a0a');
+  preview.setAttribute('stroke-width', '3');
+  preview.setAttribute('stroke-dasharray', '6 4');
+  preview.style.pointerEvents = 'none';
+  cableLayer.appendChild(preview);
+  let hoveredWb = null;
+  function move(ev) {
+    const r = origImg.getBoundingClientRect();
+    preview.setAttribute('x2', ev.clientX - r.left);
+    preview.setAttribute('y2', ev.clientY - r.top);
+    const wbEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.marker.wb');
+    if (hoveredWb && hoveredWb !== wbEl) hoveredWb.classList.remove('cable-target');
+    if (wbEl && wbEl !== hoveredWb) wbEl.classList.add('cable-target');
+    hoveredWb = wbEl;
+  }
+  function up(ev) {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    preview.remove();
+    if (hoveredWb) hoveredWb.classList.remove('cable-target');
+    const wbEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.marker.wb');
+    if (!wbEl) return;
+    const wbId = parseFloat(wbEl.dataset.id);
+    if (wbId === cam.id) return;
+    if (cables.some(c =>
+      (c.fromId === cam.id && c.toId === wbId) ||
+      (c.fromId === wbId && c.toId === cam.id)
+    )) return;
+    cables.push({ id: Date.now() + Math.random(), fromId: cam.id, toId: wbId });
     save();
   }
   document.addEventListener('mousemove', move);
