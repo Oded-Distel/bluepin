@@ -163,7 +163,7 @@
     padding: 10px 12px;
   }
   .cp-empty {
-    color: #999; font-style: italic; text-align: center;
+    color: #666; font-style: italic; text-align: center;
     padding: 20px 0; font-size: 13px;
   }
   .cp-row {
@@ -300,8 +300,8 @@
 
 <aside id="contentsPanel" dir="rtl" hidden>
   <div class="cp-header">
-    <input type="text" class="cp-name" placeholder="שם Wallbox" />
-    <button class="cp-close" title="סגור">×</button>
+    <input type="text" class="cp-name" placeholder="שם Wallbox" aria-label="שם Wallbox" />
+    <button class="cp-close" title="סגור" aria-label="סגור">×</button>
   </div>
   <div class="cp-body">
     <div class="cp-empty">אין פריטים ב-Wallbox זה. הוסף פריט למטה.</div>
@@ -309,7 +309,7 @@
   </div>
   <div class="cp-footer">
     <div class="cp-combobox">
-      <input type="text" class="cp-add" placeholder="+ הוסף פריט (BNC, XLR, ...)" />
+      <input type="text" class="cp-add" placeholder="+ הוסף פריט (BNC, XLR, ...)" aria-label="הוסף פריט" />
       <div class="cp-options" hidden></div>
     </div>
     <button class="cp-delete-wb">מחק Wallbox זה</button>
