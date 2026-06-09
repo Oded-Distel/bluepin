@@ -590,6 +590,17 @@ function renderMarkers() {
       el.appendChild(rot);
     }
 
+    if (m.type === 'wb' && Array.isArray(m.contents) && m.contents.length) {
+      const sumQty = m.contents.reduce((acc, c) => acc + (c.qty | 0), 0);
+      if (sumQty > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'qty-badge';
+        badge.textContent = String(sumQty);
+        badge.title = m.contents.map(c => `${c.name} ×${c.qty}`).join(', ');
+        el.appendChild(badge);
+      }
+    }
+
     if (m.name) {
       const lbl = document.createElement('span');
       lbl.className = 'label';
