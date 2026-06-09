@@ -961,10 +961,83 @@ cpDeleteBtn.onclick = () => {
   deleteMarker(id);
 };
 
-// Placeholder — replaced in Task 4.
+function getOpenWb() {
+  return markers.find(m => m.id === openContentsWbId && m.type === 'wb');
+}
+
 function renderContentsList() {
-  cpEmpty.style.display = 'block';
+  const m = getOpenWb();
   cpList.innerHTML = '';
+  if (!m) return;
+  const items = m.contents || [];
+  cpEmpty.style.display = items.length === 0 ? 'block' : 'none';
+  items.forEach((item, idx) => {
+    const row = document.createElement('div');
+    row.className = 'cp-row';
+
+    const nameIn = document.createElement('input');
+    nameIn.type = 'text';
+    nameIn.className = 'cp-item-name';
+    nameIn.value = item.name;
+    nameIn.setAttribute('aria-label', 'שם פריט');
+    nameIn.onchange = () => updateContentItem(idx, { name: nameIn.value.trim() || item.name });
+
+    const stepper = document.createElement('div');
+    stepper.className = 'cp-stepper';
+    const minus = document.createElement('button');
+    minus.textContent = '−';
+    minus.setAttribute('aria-label', 'הפחת כמות');
+    minus.onclick = () => updateContentItem(idx, { qty: Math.max(1, (item.qty | 0) - 1) });
+    const qtyIn = document.createElement('input');
+    qtyIn.type = 'number';
+    qtyIn.min = '1';
+    qtyIn.value = item.qty;
+    qtyIn.setAttribute('aria-label', 'כמות');
+    qtyIn.onchange = () => updateContentItem(idx, { qty: Math.max(1, parseInt(qtyIn.value, 10) || 1) });
+    const plus = document.createElement('button');
+    plus.textContent = '+';
+    plus.setAttribute('aria-label', 'הוסף כמות');
+    plus.onclick = () => updateContentItem(idx, { qty: (item.qty | 0) + 1 });
+    stepper.append(minus, qtyIn, plus);
+
+    const rm = document.createElement('button');
+    rm.className = 'cp-remove';
+    rm.textContent = '×';
+    rm.title = 'מחק פריט';
+    rm.setAttribute('aria-label', 'מחק פריט');
+    rm.onclick = () => removeContentItem(idx);
+
+    row.append(nameIn, stepper, rm);
+    cpList.appendChild(row);
+  });
+}
+
+function addContentItem(name, qty = 1) {
+  const m = getOpenWb();
+  if (!m) return;
+  if (!Array.isArray(m.contents)) m.contents = [];
+  m.contents.push({ name: name.trim(), qty: Math.max(1, qty | 0) });
+  save();
+  renderContentsList();
+  renderMarkers();
+}
+
+function updateContentItem(idx, patch) {
+  const m = getOpenWb();
+  if (!m) return;
+  Object.assign(m.contents[idx], patch);
+  save();
+  renderContentsList();
+  renderMarkers();
+}
+
+function removeContentItem(idx) {
+  const m = getOpenWb();
+  if (!m) return;
+  m.contents.splice(idx, 1);
+  save();
+  renderContentsList();
+  renderMarkers();
 }
 
 // --- Initial render ---
