@@ -327,10 +327,8 @@
     העלה PDF
     <input type="file" id="pdfInput" accept="application/pdf" style="display:none;">
   </label>
-  <button class="btn-add-wb"    id="modeWB">וולבוקס (אדום)</button>
-  <button class="btn-add-cam"   id="modeCAM">מצלמה</button>
   <button class="btn-add-cable" id="modeCable">כבל</button>
-  <span class="modeLabel" id="modeLabel">מצב: העלה PDF כדי להתחיל</span>
+  <span class="modeLabel" id="modeLabel"></span>
   <button class="btn-render" id="btnRender">ייצא PDF</button>
   <button class="btn-clear"  id="btnClear">נקה הכל</button>
 </header>
@@ -523,29 +521,21 @@ origWrap.addEventListener('drop', e => {
 function setMode(newMode) {
   mode = newMode;
   cableFromId = null;
-  document.getElementById('modeWB').classList.toggle('mode-active', mode === 'wb');
-  document.getElementById('modeCAM').classList.toggle('mode-active', mode === 'cam');
   document.getElementById('modeCable').classList.toggle('mode-active', mode === 'cable');
   updateModeLabel();
   renderMarkers();
 }
-document.getElementById('modeWB').onclick    = () => setMode(mode === 'wb'    ? null : 'wb');
-document.getElementById('modeCAM').onclick   = () => setMode(mode === 'cam'   ? null : 'cam');
 document.getElementById('modeCable').onclick = () => setMode(mode === 'cable' ? null : 'cable');
 
 function updateModeLabel() {
-  let txt = "מצב: ";
-  if (!pdfDoc) { modeLabel.textContent = "מצב: העלה PDF כדי להתחיל"; return; }
-  if (!mode) txt += "בחר מצב למעלה";
-  else if (mode === 'wb')    txt += "מוסיף וולבוקס (אדום)";
-  else if (mode === 'cam')   txt += "מוסיף מצלמה";
-  else if (mode === 'cable') {
-    txt += cableFromId == null
+  if (!pdfDoc) { modeLabel.textContent = ""; return; }
+  if (mode === 'cable') {
+    modeLabel.textContent = cableFromId == null
       ? "כבל: לחץ על נקודה ראשונה"
       : "כבל: לחץ על נקודה שנייה (Esc לביטול)";
+  } else {
+    modeLabel.textContent = "";
   }
-  if ((mode === 'wb' || mode === 'cam') && nextName) txt += "  |  שם הבא: " + nextName;
-  modeLabel.textContent = txt;
 }
 
 document.addEventListener('keydown', e => {
@@ -654,27 +644,7 @@ origImg.addEventListener('mousemove', e => {
 origImgWrap.addEventListener('click', e => {
   if (!contentsPanel.hidden && !contentsPanel.contains(e.target)) {
     closeContentsPanel();
-    // continue normal processing
   }
-  if (!pdfDoc) return;
-  // clicks that bubble from markers / handles / cables / etc.
-  if (e.target.closest('.marker')) return;
-  if (e.target.closest('#cableLayer')) return;
-
-  if (!mode) { alert("בחר קודם מצב למעלה (וולבוקס / מצלמה / כבל)"); return; }
-  if (mode === 'cable') return; // cable connects markers, not empty space
-
-  const name = (mode === 'wb')
-    ? (nextName || prompt("שם הוולבוקס:", "WB ") || "")
-    : (nextName || prompt("שם המצלמה (אופציונלי):", "") || "");
-  const r = origImg.getBoundingClientRect();
-  const x = (e.clientX - r.left) / origScale;
-  const y = (e.clientY - r.top) / origScale;
-  const m = { id: Date.now() + Math.random(), type: mode, name, x, y };
-  if (mode === 'cam') m.angle = 0;
-  if (mode === 'wb') m.contents = [];
-  markers.push(m);
-  save();
 });
 
 // --- Render markers + cables ---
@@ -1168,21 +1138,34 @@ async function renderFinal() {
     ctx.restore();
   }
 
-  const dataURL = canvas.toDataURL('image/png');
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert("ספריית ה-PDF לא נטענה. בדוק את החיבור לאינטרנט ורענן.");
+    return;
+  }
   const { jsPDF } = window.jspdf;
-  const orientation = W > H ? 'landscape' : 'portrait';
-  const pdf = new jsPDF({ orientation, unit: 'px', format: [W, H], hotfixes: ['px_scaling'] });
-  pdf.addImage(dataURL, 'PNG', 0, 0, W, H);
+  const orientation = W > H ? 'portrait' : 'landscape';
+  const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const margin = 8;
+  const fitW = pageW - margin * 2;
+  const fitH = pageH - margin * 2;
+  const s = Math.min(fitW / W, fitH / H);
+  const drawW = W * s, drawH = H * s;
+  const dataURL = canvas.toDataURL('image/jpeg', 0.92);
+  pdf.addImage(dataURL, 'JPEG', (pageW - drawW)/2, (pageH - drawH)/2, drawW, drawH);
 
-  // second page: WB contents listing (rendered to canvas so Hebrew works)
+  // second page: WB contents (canvas-rendered for Hebrew)
   const wbs = markers.filter(m => m.type === 'wb');
   if (wbs.length) {
     const pageCanvas = renderContentsPage(wbs, W, H);
-    pdf.addPage([W, H], orientation);
-    pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 0, 0, W, H);
+    pdf.addPage('a4', orientation);
+    const pdataURL = pageCanvas.toDataURL('image/jpeg', 0.92);
+    const ps = Math.min(fitW / W, fitH / H);
+    pdf.addImage(pdataURL, 'JPEG', (pageW - W*ps)/2, (pageH - H*ps)/2, W*ps, H*ps);
   }
 
-  pdf.save('תכנית-וולבוקס.pdf');
+  pdf.save('bluepin-plan.pdf');
 }
 
 function loadImg(src) {
