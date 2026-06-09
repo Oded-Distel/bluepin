@@ -451,6 +451,14 @@ function updateModeLabel() {
 }
 
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !contentsPanel.hidden) {
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+      document.activeElement.blur();
+      return;
+    }
+    closeContentsPanel();
+    return;
+  }
   if (e.key === 'Escape') {
     cableFromId = null;
     updateModeLabel();
@@ -534,6 +542,10 @@ origImg.addEventListener('mousemove', e => {
 
 // --- Click on plan: add marker or pick cable endpoint ---
 origImgWrap.addEventListener('click', e => {
+  if (!contentsPanel.hidden && !contentsPanel.contains(e.target)) {
+    closeContentsPanel();
+    // continue normal processing
+  }
   if (!pdfDoc) return;
   // clicks that bubble from markers / handles / cables / etc.
   if (e.target.closest('.marker')) return;
@@ -597,10 +609,13 @@ function renderMarkers() {
 
     el.addEventListener('mousedown', startDrag);
     el.addEventListener('click', ev => {
-      if (mode !== 'cable') return;
       if (ev.target.classList.contains('x')) return;
       if (ev.target.classList.contains('rot-handle')) return;
-      handleCableClick(m.id);
+      if (mode === 'cable') { handleCableClick(m.id); return; }
+      if (mode == null && m.type === 'wb') {
+        ev.stopPropagation();
+        openContentsPanel(m.id);
+      }
     });
     origImgWrap.appendChild(el);
   }
@@ -907,6 +922,49 @@ function drawLabel(ctx, text, x, y, color) {
   ctx.fillStyle = color;
   ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y);
+}
+
+// --- Contents panel ---
+let openContentsWbId = null;
+const contentsPanel = document.getElementById('contentsPanel');
+const cpNameInput   = contentsPanel.querySelector('.cp-name');
+const cpCloseBtn    = contentsPanel.querySelector('.cp-close');
+const cpDeleteBtn   = contentsPanel.querySelector('.cp-delete-wb');
+const cpList        = contentsPanel.querySelector('.cp-list');
+const cpEmpty       = contentsPanel.querySelector('.cp-empty');
+const cpAddInput    = contentsPanel.querySelector('.cp-add');
+const cpOptions     = contentsPanel.querySelector('.cp-options');
+
+function openContentsPanel(wbId, focusName = false) {
+  const m = markers.find(mm => mm.id === wbId && mm.type === 'wb');
+  if (!m) return;
+  openContentsWbId = wbId;
+  cpNameInput.value = m.name || '';
+  contentsPanel.hidden = false;
+  renderContentsList();
+  if (focusName) cpNameInput.focus();
+}
+
+function closeContentsPanel() {
+  openContentsWbId = null;
+  contentsPanel.hidden = true;
+  cpOptions.hidden = true;
+  cpAddInput.value = '';
+}
+
+cpCloseBtn.onclick = closeContentsPanel;
+
+cpDeleteBtn.onclick = () => {
+  if (openContentsWbId == null) return;
+  const id = openContentsWbId;
+  closeContentsPanel();
+  deleteMarker(id);
+};
+
+// Placeholder — replaced in Task 4.
+function renderContentsList() {
+  cpEmpty.style.display = 'block';
+  cpList.innerHTML = '';
 }
 
 // --- Initial render ---
