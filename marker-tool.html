@@ -628,6 +628,13 @@ function renderMarkers() {
         openContentsPanel(m.id);
       }
     });
+    if (m.type === 'wb') {
+      el.addEventListener('dblclick', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openContentsPanel(m.id, true);
+      });
+    }
     origImgWrap.appendChild(el);
   }
   renderCables();
@@ -766,8 +773,12 @@ function renderList() {
     const renameBtn = document.createElement('button');
     renameBtn.textContent = '✎';
     renameBtn.onclick = () => {
-      const v = prompt("שנה שם:", m.name);
-      if (v != null) { m.name = v; save(); }
+      if (m.type === 'wb') {
+        openContentsPanel(m.id, true);
+      } else {
+        const v = prompt("שנה שם:", m.name);
+        if (v != null) { m.name = v; save(); renderMarkers(); renderList(); }
+      }
     };
     li.appendChild(renameBtn);
 
@@ -964,6 +975,15 @@ function closeContentsPanel() {
 }
 
 cpCloseBtn.onclick = closeContentsPanel;
+
+cpNameInput.addEventListener('change', () => {
+  const m = getOpenWb();
+  if (!m) return;
+  m.name = cpNameInput.value.trim();
+  save();
+  renderMarkers();
+  renderList();
+});
 
 cpDeleteBtn.onclick = () => {
   if (openContentsWbId == null) return;
