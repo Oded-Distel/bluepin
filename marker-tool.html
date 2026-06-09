@@ -1024,7 +1024,7 @@ function addContentItem(name, qty = 1) {
 
 function updateContentItem(idx, patch) {
   const m = getOpenWb();
-  if (!m) return;
+  if (!m || !m.contents[idx]) return;
   Object.assign(m.contents[idx], patch);
   save();
   renderContentsList();
@@ -1033,7 +1033,7 @@ function updateContentItem(idx, patch) {
 
 function removeContentItem(idx) {
   const m = getOpenWb();
-  if (!m) return;
+  if (!m || !m.contents[idx]) return;
   m.contents.splice(idx, 1);
   save();
   renderContentsList();
