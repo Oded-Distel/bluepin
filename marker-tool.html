@@ -202,6 +202,7 @@ const QUICK_NAMES = [
 ];
 
 // --- State ---
+const DEFAULT_CONTENT_ITEMS = ['Camera', 'BNC', 'XLR', 'Lemo', 'Coax', 'Network', 'Fiber LC', 'Fiber SC', 'Power Outlet'];
 let mode = null; // 'wb' | 'cam' | 'cable' | null
 let nextName = "";
 let cableFromId = null;       // marker id selected as "from" while in cable mode
@@ -218,6 +219,10 @@ if (Array.isArray(stored)) {
 } else if (stored && typeof stored === 'object') {
   markers = stored.markers || [];
   cables = stored.cables || [];
+}
+// migration: ensure every WB has a contents array
+for (const m of markers) {
+  if (m.type === 'wb' && !Array.isArray(m.contents)) m.contents = [];
 }
 
 // --- DOM refs ---
@@ -285,7 +290,7 @@ origWrap.addEventListener('drop', e => {
   const y = (e.clientY - r.top) / origScale;
   // ignore drops outside the actual image
   if (x < 0 || y < 0 || x > origImg.naturalWidth || y > origImg.naturalHeight) return;
-  markers.push({ id: Date.now() + Math.random(), type: 'wb', name: dragName, x, y });
+  markers.push({ id: Date.now() + Math.random(), type: 'wb', name: dragName, x, y, contents: [] });
   save();
 });
 
@@ -418,6 +423,7 @@ origImgWrap.addEventListener('click', e => {
   const y = (e.clientY - r.top) / origScale;
   const m = { id: Date.now() + Math.random(), type: mode, name, x, y };
   if (mode === 'cam') m.angle = 0;
+  if (mode === 'wb') m.contents = [];
   markers.push(m);
   save();
 });
