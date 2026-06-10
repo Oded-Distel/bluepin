@@ -207,16 +207,6 @@
   textarea {
     width: 100%; height: 100px; margin-top: 10px; font-family: monospace; font-size: 11px;
   }
-  .quick-names {
-    display: flex; flex-wrap: wrap; gap: 4px; padding: 6px;
-    background: #fafafa; border-bottom: 1px solid #ddd;
-  }
-  .quick-names button {
-    padding: 3px 8px; font-size: 12px; cursor: grab;
-    background: #fff; border: 1px solid #b00; color: #b00; border-radius: 3px;
-  }
-  .quick-names button:active { cursor: grabbing; }
-  .quick-names button.dragging { opacity: 0.4; }
   .canvas-wrap.drop-target { outline: 3px dashed #b00; outline-offset: -3px; }
   .modeLabel { padding: 4px 10px; background:#fff; color:#222; border-radius: 4px; font-size: 12px; }
   .empty-msg {
@@ -386,10 +376,6 @@
   <button class="btn-clear"  id="btnClear">נקה הכל</button>
 </header>
 
-<div class="quick-names" id="quickNames">
-  <strong style="align-self:center;margin-left:6px;">קליק על שם, או גרור ישירות לתכנית →</strong>
-</div>
-
 <main>
 
   <div class="panel">
@@ -538,17 +524,9 @@ const ACCESS_HASH_URL = 'https://gist.githubusercontent.com/Oded-Distel/7fb0899c
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-const QUICK_NAMES = [
-  "WB MAIN A", "WB MAIN B", "WB MAIN C", "WB Z", "WB M",
-  "WB A", "WB B", "WB C", "WB D", "WB K",
-  "WB F", "WB G", "WB H", "WB I",
-  "WB E", "WB P", "WB T"
-];
-
 // --- State ---
 const DEFAULT_CONTENT_ITEMS = ['Camera', 'BNC', 'XLR', 'Lemo', 'Coax', 'Network', 'Fiber LC', 'Fiber SC', 'Power Outlet'];
-let mode = null; // 'wb' | 'cam' | 'cable' | null
-let nextName = "";
+let mode = null; // 'cable' | null (cable mode set from side panel button)
 let cableFromId = null;       // marker id selected as "from" while in cable mode
 let pdfDoc = null;            // loaded PDF (pdfjs document proxy)
 let currentPageNum = 1;
@@ -584,62 +562,7 @@ const origCoords = document.getElementById('origCoords');
 const pageSelector = document.getElementById('pageSelector');
 const pdfName = document.getElementById('pdfName');
 
-// --- Quick names bar (click to set name, drag to place WB directly) ---
-let dragName = null;
-const qn = document.getElementById('quickNames');
-QUICK_NAMES.forEach(name => {
-  const b = document.createElement('button');
-  b.textContent = name;
-  b.draggable = true;
-  b.onclick = () => { nextName = name; updateModeLabel(); };
-  b.addEventListener('dragstart', e => {
-    if (!pdfDoc) { e.preventDefault(); return; }
-    dragName = name;
-    b.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'copy';
-    // setData is required for Firefox to start the drag
-    e.dataTransfer.setData('text/plain', name);
-  });
-  b.addEventListener('dragend', () => {
-    dragName = null;
-    b.classList.remove('dragging');
-    document.getElementById('origWrap').classList.remove('drop-target');
-  });
-  qn.appendChild(b);
-});
-const bCustom = document.createElement('button');
-bCustom.textContent = "שם מותאם...";
-bCustom.style.background = "#ffe";
-bCustom.draggable = false;
-bCustom.onclick = () => {
-  const v = prompt("הקלד שם:", nextName || "WB ");
-  if (v) { nextName = v; updateModeLabel(); }
-};
-qn.appendChild(bCustom);
-
-// Drop zone on the plan
 const origWrap = document.getElementById('origWrap');
-origWrap.addEventListener('dragover', e => {
-  if (!dragName) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'copy';
-  origWrap.classList.add('drop-target');
-});
-origWrap.addEventListener('dragleave', e => {
-  if (e.target === origWrap) origWrap.classList.remove('drop-target');
-});
-origWrap.addEventListener('drop', e => {
-  if (!dragName || !pdfDoc) return;
-  e.preventDefault();
-  origWrap.classList.remove('drop-target');
-  const r = origImg.getBoundingClientRect();
-  const x = (e.clientX - r.left) / origScale;
-  const y = (e.clientY - r.top) / origScale;
-  // ignore drops outside the actual image
-  if (x < 0 || y < 0 || x > origImg.naturalWidth || y > origImg.naturalHeight) return;
-  markers.push({ id: Date.now() + Math.random(), type: 'wb', name: dragName, x, y, contents: [] });
-  save();
-});
 
 // cable-mode (legacy click-based wiring) is no longer reachable from the toolbar —
 // the only path to add cables is dragging from a camera's lens. cableFromId
