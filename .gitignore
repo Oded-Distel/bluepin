@@ -3,3 +3,11 @@ __pycache__/
 .DS_Store
 /tmp/
 markers.json.bak
+
+# Files that must NOT appear in the public bluepin repo
+# (they bypass the password gate or are admin tools)
+marker-tool-test.html
+marker-tool-standalone.html
+marker-tool-template.html
+make-password.html
+סימון-וולבוקס.html
