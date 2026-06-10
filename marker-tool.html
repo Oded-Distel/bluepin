@@ -471,7 +471,7 @@
 // the access JSON. The Gist should contain a single file with this shape:
 //   { "hash": "<sha256-of-password>", "active": true, "message": "..." }
 // To change the password: edit the Gist. Clients pick up the change on next load.
-const ACCESS_HASH_URL = 'REPLACE_WITH_GIST_RAW_URL';
+const ACCESS_HASH_URL = 'https://gist.githubusercontent.com/Oded-Distel/7fb0899c6ae1377fffb8f0858aa8fbf5/raw/bluepin-access.json';
 
 (async function authGate() {
   const gate = document.getElementById('authGate');
