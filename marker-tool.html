@@ -321,6 +321,33 @@
   }
   .cp-delete-wb:hover { background: #fee; }
 
+  /* Access gate */
+  #authGate {
+    position: fixed; inset: 0;
+    background: #f0f0f0; z-index: 99999;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, "Arial Hebrew", Arial, sans-serif;
+  }
+  #authGate .auth-box {
+    background: #fff; padding: 36px 40px; border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+    text-align: center; min-width: 320px;
+  }
+  #authGate h1 { margin: 0 0 6px; font-size: 28px; color: #222; }
+  #authGate .auth-sub { color: #888; font-size: 13px; margin-bottom: 22px; }
+  #authGate #authMsg { color: #444; margin-bottom: 12px; font-size: 14px; }
+  #authGate input {
+    font-size: 18px; padding: 10px 12px; width: 240px;
+    border: 1px solid #bbb; border-radius: 5px; text-align: center;
+  }
+  #authGate button {
+    margin-top: 14px; font-size: 16px; padding: 10px 28px;
+    background: #06b; color: #fff; border: 0; border-radius: 5px;
+    cursor: pointer; font-weight: bold;
+  }
+  #authGate button:disabled { background: #aaa; cursor: not-allowed; }
+  #authGate .auth-error { color: #c33; font-weight: bold; }
+
   /* Badge on WB marker */
   .marker.wb .qty-badge {
     position: absolute;
@@ -337,6 +364,16 @@
 </style>
 </head>
 <body>
+
+<div id="authGate">
+  <div class="auth-box">
+    <h1>BluePin</h1>
+    <div class="auth-sub">כניסה לכלי סימון תכניות</div>
+    <div id="authMsg">הזן סיסמה</div>
+    <input id="authPass" type="password" autocomplete="current-password" />
+    <div><button id="authBtn">כניסה</button></div>
+  </div>
+</div>
 
 <header>
   <h1>BluePin – סימון תכניות</h1>
@@ -429,6 +466,74 @@
 </aside>
 
 <script>
+// --- Access gate ---
+// Replace this URL with the "Raw" URL of your secret GitHub Gist that holds
+// the access JSON. The Gist should contain a single file with this shape:
+//   { "hash": "<sha256-of-password>", "active": true, "message": "..." }
+// To change the password: edit the Gist. Clients pick up the change on next load.
+const ACCESS_HASH_URL = 'REPLACE_WITH_GIST_RAW_URL';
+
+(async function authGate() {
+  const gate = document.getElementById('authGate');
+  const msg  = document.getElementById('authMsg');
+  const pass = document.getElementById('authPass');
+  const btn  = document.getElementById('authBtn');
+
+  async function sha256(s) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  function setErr(t)  { msg.textContent = t; msg.classList.add('auth-error'); }
+  function setInfo(t) { msg.textContent = t; msg.classList.remove('auth-error'); }
+
+  // If user is editing locally with no URL set, skip the gate.
+  if (ACCESS_HASH_URL === 'REPLACE_WITH_GIST_RAW_URL') {
+    gate.remove();
+    return;
+  }
+
+  let config;
+  try {
+    const res = await fetch(ACCESS_HASH_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    config = await res.json();
+  } catch (e) {
+    setErr('אין חיבור או שהשרת אינו זמין. רענן את הדף.');
+    pass.disabled = true; btn.disabled = true;
+    return;
+  }
+
+  if (config.active === false) {
+    setErr(config.message || 'הכניסה מבוטלת זמנית. צור קשר עם בעל הכלי.');
+    pass.disabled = true; btn.disabled = true;
+    return;
+  }
+
+  // Auto-unlock if the cached hash still matches the current config.
+  if (localStorage.getItem('bluepin_auth_hash') === config.hash) {
+    gate.remove();
+    return;
+  }
+
+  async function tryLogin() {
+    btn.disabled = true;
+    const h = await sha256(pass.value);
+    if (h === config.hash) {
+      localStorage.setItem('bluepin_auth_hash', h);
+      gate.remove();
+    } else {
+      setErr('סיסמה שגויה, נסה שוב');
+      pass.value = '';
+      pass.focus();
+      btn.disabled = false;
+    }
+  }
+  btn.onclick = tryLogin;
+  pass.addEventListener('keypress', e => { if (e.key === 'Enter') tryLogin(); });
+  pass.focus();
+})();
+
 // --- PDF.js worker ---
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
