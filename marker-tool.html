@@ -94,6 +94,43 @@
   .marker.wb.cable-target { outline: 4px solid #a0a; outline-offset: 2px; border-radius: 50%; }
   .marker.cable-from { outline: 4px solid #f0f; outline-offset: 2px; border-radius: 50%; }
 
+  /* Cable mode: make it impossible to miss that the user is in a special state. */
+  .canvas-wrap.cable-mode-active {
+    outline: 4px dashed #a0a; outline-offset: -4px;
+    background: repeating-linear-gradient(45deg, #faf0fa 0 10px, #f5e5f5 10px 20px);
+  }
+  .canvas-wrap.cable-mode-active .marker {
+    cursor: crosshair;
+  }
+  .canvas-wrap.cable-mode-active .marker:hover {
+    filter: drop-shadow(0 0 8px #a0a);
+  }
+  .side-btn.add-cable.mode-active {
+    background: #f0f; outline: 3px solid #a0a; outline-offset: 1px;
+    box-shadow: 0 0 14px rgba(170,0,170,0.6);
+  }
+  .modeLabel.cable-on {
+    background: #a0a; color: #fff;
+    font-size: 14px; font-weight: bold;
+    padding: 6px 14px;
+    animation: pulse-mode 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse-mode {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(170,0,170,0.5); }
+    50%      { box-shadow: 0 0 0 10px rgba(170,0,170,0); }
+  }
+  /* Sticky banner inside the canvas while cable mode is on */
+  #cableHint {
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    background: #a0a; color: #fff;
+    padding: 8px 18px; border-radius: 6px;
+    font-size: 14px; font-weight: bold;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    z-index: 50; pointer-events: none;
+    white-space: nowrap;
+  }
+  #cableHint[hidden] { display: none; }
+
   #zoomControls { display: flex; gap: 6px; padding: 4px 8px; background: #eee; font-size: 12px;}
   #zoomControls button { padding: 2px 8px; cursor: pointer; }
   .legend-side {
@@ -405,6 +442,7 @@
       <span id="origCoords" style="margin-right:auto;"></span>
     </div>
     <div class="canvas-wrap" id="origWrap">
+      <div id="cableHint" hidden>מצב כבל</div>
       <div id="emptyMsg" class="empty-msg">
         <div class="big">אין תכנית טעונה</div>
         <div>לחץ "העלה PDF" בכותרת כדי להתחיל</div>
@@ -582,13 +620,20 @@ const origWrap = document.getElementById('origWrap');
 // stays unused; mode remains null. Markers can still be cleaned via deleteMarker.
 
 function updateModeLabel() {
-  if (!pdfDoc) { modeLabel.textContent = ""; return; }
+  const hint = document.getElementById('cableHint');
+  modeLabel.classList.remove('cable-on');
+  origWrap.classList.toggle('cable-mode-active', mode === 'cable');
+  if (!pdfDoc) { modeLabel.textContent = ""; if (hint) hint.hidden = true; return; }
   if (mode === 'cable') {
-    modeLabel.textContent = cableFromId == null
-      ? "כבל: לחץ על נקודה ראשונה"
-      : "כבל: לחץ על נקודה שנייה (Esc לביטול)";
+    const txt = cableFromId == null
+      ? "מצב כבל: לחץ על נקודה ראשונה"
+      : "מצב כבל: כעת לחץ על נקודה שנייה (Esc לביטול)";
+    modeLabel.textContent = txt;
+    modeLabel.classList.add('cable-on');
+    if (hint) { hint.textContent = txt; hint.hidden = false; }
   } else {
     modeLabel.textContent = "";
+    if (hint) hint.hidden = true;
   }
 }
 
