@@ -91,16 +91,6 @@
     cursor: grab;
     z-index: 4;
   }
-  .marker .cable-handle {
-    position: absolute;
-    width: 14px; height: 14px;
-    background: rgba(170, 0, 170, 0.85); border: 2px solid #fff;
-    border-radius: 50%;
-    cursor: crosshair;
-    z-index: 6;
-    box-shadow: 0 0 0 1px #a0a;
-  }
-  .marker .cable-handle:hover { background: #f0f; transform: scale(1.15); }
   .marker.wb.cable-target { outline: 4px solid #a0a; outline-offset: 2px; border-radius: 50%; }
   .marker.cable-from { outline: 4px solid #f0f; outline-offset: 2px; border-radius: 50%; }
 
@@ -191,7 +181,7 @@
     font-size: 18px; cursor: pointer;
   }
   #logoOverlay {
-    position: absolute; top: 8px; right: 8px;
+    position: absolute; top: 8px; left: 8px;
     width: 200px; height: 100px;
     background: rgba(255,255,255,0.92); padding: 4px;
     border: 1px solid #ccc; border-radius: 4px;
@@ -338,6 +328,27 @@
   #authGate button:disabled { background: #aaa; cursor: not-allowed; }
   #authGate .auth-error { color: #c33; font-weight: bold; }
 
+  /* Right-click context menu */
+  #ctxMenu {
+    position: fixed; z-index: 200;
+    background: #fff; border: 1px solid #888;
+    border-radius: 5px; box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    min-width: 120px; padding: 4px 0;
+    font-family: -apple-system, "Arial Hebrew", Arial, sans-serif;
+    font-size: 14px;
+  }
+  #ctxMenu[hidden] { display: none; }
+  #ctxMenu .ctx-item {
+    padding: 7px 14px; cursor: pointer; white-space: nowrap;
+    display: flex; align-items: center; gap: 8px;
+  }
+  #ctxMenu .ctx-item:hover { background: #eef; }
+  #ctxMenu .ctx-item.danger { color: #c33; }
+  #ctxMenu .ctx-item.danger:hover { background: #fee; }
+  #ctxMenu .ctx-sep {
+    height: 1px; background: #eee; margin: 3px 0;
+  }
+
   /* Badge on WB marker */
   .marker.wb .qty-badge {
     position: absolute;
@@ -432,6 +443,8 @@
   </div>
 
 </main>
+
+<div id="ctxMenu" hidden></div>
 
 <aside id="contentsPanel" dir="rtl" hidden>
   <div class="cp-header">
@@ -624,7 +637,7 @@ function seedStartingMarkers() {
   if (!W || !H) return;
   const xs = [W * 0.25, W * 0.5, W * 0.75];
   for (let i = 0; i < 3; i++) {
-    markers.push({ id: Date.now() + Math.random(), type: 'wb',  name: 'WB '  + (i+1), x: xs[i], y: H * 0.30, contents: [] });
+    markers.push({ id: Date.now() + Math.random(), type: 'wb',  name: nextWbName(), x: xs[i], y: H * 0.30, contents: [] });
     markers.push({ id: Date.now() + Math.random(), type: 'cam', name: 'Cam ' + (i+1), x: xs[i], y: H * 0.70, angle: 0 });
   }
   save();
@@ -709,15 +722,6 @@ function renderMarkers() {
       rot.style.top  = (22 + Math.sin(angleRad) * r - 6) + 'px';
       rot.addEventListener('mousedown', ev => startRotate(ev, m));
       el.appendChild(rot);
-      // cable handle on the lens (drag to a WB to create cable)
-      const cab = document.createElement('div');
-      cab.className = 'cable-handle';
-      cab.title = 'גרור ל-Wallbox כדי לחבר כבל';
-      const lensR = 8; // distance from center to lens, in viewBox units (44px marker)
-      cab.style.left = (22 + Math.cos(angleRad) * lensR - 7) + 'px';
-      cab.style.top  = (22 + Math.sin(angleRad) * lensR - 7) + 'px';
-      cab.addEventListener('mousedown', ev => startCableDrag(ev, m));
-      el.appendChild(cab);
     }
 
     if (m.type === 'wb' && Array.isArray(m.contents) && m.contents.length) {
@@ -757,6 +761,11 @@ function renderMarkers() {
         ev.stopPropagation();
         openContentsPanel(m.id);
       }
+    });
+    el.addEventListener('contextmenu', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      showCtxMenu(ev.clientX, ev.clientY, m);
     });
     if (m.type === 'wb') {
       el.addEventListener('dblclick', ev => {
@@ -836,10 +845,77 @@ function deleteMarker(id) {
   save();
 }
 
+// WB letter naming: a, b, c, ..., z, aa, ab, ...
+function nextWbName() {
+  let n = markers.filter(m => m.type === 'wb').length;
+  let s = '';
+  do {
+    s = String.fromCharCode(97 + (n % 26)) + s;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return 'WB' + s;
+}
+
+function duplicateMarker(id) {
+  const src = markers.find(m => m.id === id);
+  if (!src) return;
+  const copy = Object.assign({}, src, {
+    id: Date.now() + Math.random(),
+    x: src.x + 40,
+    y: src.y + 40,
+  });
+  if (src.type === 'wb') {
+    copy.name = nextWbName();
+    copy.contents = Array.isArray(src.contents)
+      ? src.contents.map(it => ({ name: it.name, qty: it.qty }))
+      : [];
+  } else if (src.type === 'cam') {
+    copy.name = 'Cam ' + (markers.filter(m => m.type === 'cam').length + 1);
+  }
+  markers.push(copy);
+  save();
+}
+
+// --- Right-click context menu ---
+const ctxMenu = document.getElementById('ctxMenu');
+function showCtxMenu(clientX, clientY, m) {
+  ctxMenu.innerHTML = '';
+  const items = [
+    { label: 'העתק', onClick: () => duplicateMarker(m.id) },
+    { sep: true },
+    { label: 'מחק', danger: true, onClick: () => deleteMarker(m.id) },
+  ];
+  for (const it of items) {
+    if (it.sep) {
+      const sep = document.createElement('div');
+      sep.className = 'ctx-sep';
+      ctxMenu.appendChild(sep);
+      continue;
+    }
+    const el = document.createElement('div');
+    el.className = 'ctx-item' + (it.danger ? ' danger' : '');
+    el.textContent = it.label;
+    el.onclick = () => { hideCtxMenu(); it.onClick(); };
+    ctxMenu.appendChild(el);
+  }
+  ctxMenu.hidden = false;
+  // position then clamp inside viewport
+  ctxMenu.style.left = clientX + 'px';
+  ctxMenu.style.top  = clientY + 'px';
+  const r = ctxMenu.getBoundingClientRect();
+  if (r.right > window.innerWidth)  ctxMenu.style.left = (window.innerWidth - r.width - 4) + 'px';
+  if (r.bottom > window.innerHeight) ctxMenu.style.top  = (window.innerHeight - r.height - 4) + 'px';
+}
+function hideCtxMenu() { ctxMenu.hidden = true; }
+document.addEventListener('mousedown', e => {
+  if (!ctxMenu.hidden && !ctxMenu.contains(e.target)) hideCtxMenu();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtxMenu(); });
+document.addEventListener('scroll', hideCtxMenu, true);
+
 function startDrag(e) {
   if (e.target.classList.contains('x')) return;
   if (e.target.classList.contains('rot-handle')) return;
-  if (e.target.classList.contains('cable-handle')) return;
   if (mode === 'cable') return; // cable mode uses clicks, not drags
   const id = parseFloat(this.dataset.id);
   const m = markers.find(mm => mm.id === id);
@@ -878,62 +954,6 @@ function startRotate(e, m) {
   function up() {
     document.removeEventListener('mousemove', move);
     document.removeEventListener('mouseup', up);
-    save();
-  }
-  document.addEventListener('mousemove', move);
-  document.addEventListener('mouseup', up);
-}
-
-function startCableDrag(e, cam) {
-  e.stopPropagation();
-  e.preventDefault();
-  const preview = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-  preview.setAttribute('x1', cam.x * origScale);
-  preview.setAttribute('y1', cam.y * origScale);
-  preview.setAttribute('x2', cam.x * origScale);
-  preview.setAttribute('y2', cam.y * origScale);
-  preview.setAttribute('stroke', '#a0a');
-  preview.setAttribute('stroke-width', '3');
-  preview.setAttribute('stroke-dasharray', '6 4');
-  preview.style.pointerEvents = 'none';
-  cableLayer.appendChild(preview);
-  let hoveredWb = null;
-  function move(ev) {
-    const r = origImg.getBoundingClientRect();
-    preview.setAttribute('x2', ev.clientX - r.left);
-    preview.setAttribute('y2', ev.clientY - r.top);
-    const wbEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.marker.wb');
-    if (hoveredWb && hoveredWb !== wbEl) hoveredWb.classList.remove('cable-target');
-    if (wbEl && wbEl !== hoveredWb) wbEl.classList.add('cable-target');
-    hoveredWb = wbEl;
-  }
-  function up(ev) {
-    document.removeEventListener('mousemove', move);
-    document.removeEventListener('mouseup', up);
-    preview.remove();
-    if (hoveredWb) hoveredWb.classList.remove('cable-target');
-    let wbId = null;
-    const wbEl = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.marker.wb');
-    if (wbEl) {
-      wbId = parseFloat(wbEl.dataset.id);
-      if (wbId === cam.id) return; // safety
-    } else {
-      // empty space inside canvas → create a new WB there
-      const overImg = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('#origImgWrap');
-      if (!overImg) return; // dropped outside canvas — cancel
-      const r = origImg.getBoundingClientRect();
-      const x = (ev.clientX - r.left) / origScale;
-      const y = (ev.clientY - r.top)  / origScale;
-      const newId = Date.now() + Math.random();
-      const name = 'WB ' + (markers.filter(m => m.type === 'wb').length + 1);
-      markers.push({ id: newId, type: 'wb', name, x, y, contents: [] });
-      wbId = newId;
-    }
-    if (cables.some(c =>
-      (c.fromId === cam.id && c.toId === wbId) ||
-      (c.fromId === wbId && c.toId === cam.id)
-    )) { save(); return; }
-    cables.push({ id: Date.now() + Math.random(), fromId: cam.id, toId: wbId });
     save();
   }
   document.addEventListener('mousemove', move);
@@ -1077,11 +1097,24 @@ function addQuickMarker(type) {
   const W = origImg.naturalWidth, H = origImg.naturalHeight;
   // small random offset so a stack of clicks doesn't pile on the exact center
   const jitter = () => (Math.random() - 0.5) * 60;
-  const m = { id: Date.now() + Math.random(), type, name: '', x: W/2 + jitter(), y: H/2 + jitter() };
-  if (type === 'wb')  { m.name = 'WB ' + (markers.filter(x => x.type === 'wb').length + 1);  m.contents = []; }
+  // always place at the geometric center of the plan; afterwards we scroll the
+  // canvas-wrap so the new icon is visible in the viewport.
+  const cx = W / 2 + jitter();
+  const cy = H / 2 + jitter();
+  const m = { id: Date.now() + Math.random(), type, name: '', x: cx, y: cy };
+  if (type === 'wb')  { m.name = nextWbName();  m.contents = []; }
   if (type === 'cam') { m.name = 'Cam ' + (markers.filter(x => x.type === 'cam').length + 1); m.angle = 0; }
   markers.push(m);
   save();
+  scrollToImagePoint(cx, cy);
+}
+
+// Scroll the canvas-wrap so the given image-space point is centered in view
+function scrollToImagePoint(imgX, imgY) {
+  const targetX = imgX * origScale - origWrap.clientWidth  / 2;
+  const targetY = imgY * origScale - origWrap.clientHeight / 2;
+  origWrap.scrollLeft = Math.max(0, targetX);
+  origWrap.scrollTop  = Math.max(0, targetY);
 }
 document.getElementById('quickAddWb').onclick  = () => addQuickMarker('wb');
 document.getElementById('quickAddCam').onclick = () => addQuickMarker('cam');
@@ -1110,13 +1143,14 @@ document.addEventListener('keydown', e => {
 const logoOverlay = document.getElementById('logoOverlay');
 const logoThumb   = document.getElementById('logoThumb');
 function updateLogoPreview() {
+  // The on-canvas overlay was confusing: the logo no longer sits on the plan in
+  // the export — it has its own box on the PDF page. Keep the side-panel thumb
+  // as the only on-screen preview so the user can confirm what was uploaded.
+  logoOverlay.hidden = true;
   if (logo && logo.data) {
-    logoOverlay.querySelector('img').src = logo.data;
-    logoOverlay.hidden = false;
     logoThumb.querySelector('img').src = logo.data;
     logoThumb.hidden = false;
   } else {
-    logoOverlay.hidden = true;
     logoThumb.hidden = true;
   }
 }
@@ -1186,44 +1220,67 @@ async function renderFinal() {
     if (m.name) drawLabel(ctx, m.name, m.x + 28, m.y, '#b00');
   }
 
-  // logo (top-right of main page)
-  if (logo && logo.data) {
-    const img = await loadImg(logo.data);
-    const maxW = Math.min(W * 0.18, 400), maxH = Math.min(H * 0.12, 200);
-    const s = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
-    const lw = img.naturalWidth * s, lh = img.naturalHeight * s;
-    ctx.save();
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.fillRect(W - lw - 30, 18, lw + 16, lh + 12);
-    ctx.drawImage(img, W - lw - 22, 24, lw, lh);
-    ctx.restore();
-  }
+  // NOTE: logo is no longer baked onto the plan canvas — it gets its own
+  // box on the PDF page (top-left, matching the legend column width).
 
   if (!window.jspdf || !window.jspdf.jsPDF) {
     alert("ספריית ה-PDF לא נטענה. בדוק את החיבור לאינטרנט ורענן.");
     return;
   }
   const { jsPDF } = window.jspdf;
-  const orientation = W >= H ? 'landscape' : 'portrait';
-  const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
-  const pageW = pdf.internal.pageSize.getWidth();
-  const pageH = pdf.internal.pageSize.getHeight();
-  const margin = 3;
-  const fitW = pageW - margin * 2;
-  const fitH = pageH - margin * 2;
-  const s = Math.min(fitW / W, fitH / H);
-  const drawW = W * s, drawH = H * s;
-  const dataURL = canvas.toDataURL('image/jpeg', 0.92);
-  pdf.addImage(dataURL, 'JPEG', (pageW - drawW)/2, (pageH - drawH)/2, drawW, drawH);
+  // Single landscape A4 page: left column = logo box (top) + legend (below);
+  // right column = the plan itself. Layout in mm.
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageW  = pdf.internal.pageSize.getWidth();   // 297
+  const pageH  = pdf.internal.pageSize.getHeight();  // 210
+  const margin = 5;
+  const gap    = 5;
+  const sideW  = 80;                  // shared width: logo box + legend
+  const logoH  = 30;                  // fixed-height logo strip on top
+  const legendY = margin + logoH + gap;
+  const legendH = pageH - legendY - margin;
+  const planX   = margin + sideW + gap;
+  const planY   = margin;
+  const planAreaW = pageW - margin - planX;
+  const planAreaH = pageH - margin * 2;
 
-  // second page: WB contents (canvas-rendered for Hebrew)
+  // --- Plan ---
+  const s = Math.min(planAreaW / W, planAreaH / H);
+  const drawW = W * s, drawH = H * s;
+  const px = planX + (planAreaW - drawW) / 2;
+  const py = planY + (planAreaH - drawH) / 2;
+  pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', px, py, drawW, drawH);
+
+  // --- Legend (always rendered, even with 0 WBs) ---
   const wbs = markers.filter(m => m.type === 'wb');
-  if (wbs.length) {
-    const pageCanvas = renderContentsPage(wbs, W, H);
-    pdf.addPage('a4', orientation);
-    const pdataURL = pageCanvas.toDataURL('image/jpeg', 0.92);
-    const ps = Math.min(fitW / W, fitH / H);
-    pdf.addImage(pdataURL, 'JPEG', (pageW - W*ps)/2, (pageH - H*ps)/2, W*ps, H*ps);
+  const legCanvasW = 800;
+  const legCanvasH = Math.round(legCanvasW * (legendH / sideW));
+  const legCanvas  = renderContentsPage(wbs, legCanvasW, legCanvasH);
+  pdf.addImage(legCanvas.toDataURL('image/jpeg', 0.92), 'JPEG',
+    margin, legendY, sideW, legendH);
+
+  // --- Logo box (top-left, same width as legend) ---
+  // Frame is drawn so the box is visible even when no logo is uploaded.
+  pdf.setDrawColor(187);
+  pdf.setLineWidth(0.4);
+  pdf.rect(margin, margin, sideW, logoH);
+  if (logo && logo.data) {
+    try {
+      const limg = await loadImg(logo.data);
+      const fmt  = (logo.data.match(/^data:image\/(\w+);/) || [,'png'])[1].toUpperCase();
+      const fmtNorm = fmt === 'JPG' ? 'JPEG' : fmt;
+      const padBox = 2;
+      const boxW = sideW - padBox*2;
+      const boxH = logoH - padBox*2;
+      const r = limg.naturalWidth / limg.naturalHeight;
+      let lw = boxW, lh = boxW / r;
+      if (lh > boxH) { lh = boxH; lw = boxH * r; }
+      const lx = margin + (sideW - lw) / 2;
+      const ly = margin + (logoH - lh) / 2;
+      pdf.addImage(logo.data, fmtNorm, lx, ly, lw, lh);
+    } catch (e) {
+      // Logo failed to load — keep going so the user still gets the rest of the PDF.
+    }
   }
 
   pdf.save('bluepin-plan.pdf');
@@ -1244,47 +1301,63 @@ function renderContentsPage(wbs, W, H) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
 
-  // title
-  ctx.direction = 'rtl';
+  // visible frame so the legend column reads as a distinct block
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(2, 2, W - 4, H - 4);
+
+  // right-anchored layout — works without ctx.direction (some PDF/canvas paths
+  // ignore it). textAlign='right' is enough for Hebrew text to render correctly.
   ctx.textAlign = 'right';
+  ctx.textBaseline = 'alphabetic';
+  const padR = 28;
+  const padL = 16;
+  let y = 60;
+
+  // title
   ctx.fillStyle = '#222';
-  ctx.font = 'bold 42px Arial';
-  ctx.fillText('תכולת Wallboxes', W - 60, 80);
-  ctx.font = '20px Arial';
+  ctx.font = 'bold 36px "Arial Hebrew", Arial, sans-serif';
+  ctx.fillText('תכולת Wallboxes', W - padR, y);
+  y += 34;
+  ctx.font = '18px "Arial Hebrew", Arial, sans-serif';
   ctx.fillStyle = '#666';
-  ctx.fillText(new Date().toLocaleDateString('he-IL'), W - 60, 115);
+  ctx.fillText(new Date().toLocaleDateString('he-IL'), W - padR, y);
+  y += 30;
 
-  // columns layout
-  const cols = wbs.length > 8 ? 2 : 1;
-  const colW = (W - 120) / cols;
-  let col = 0, y = 170;
+  // separator under title
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, y); ctx.lineTo(W - padL, y); ctx.stroke();
+  y += 28;
+
+  if (wbs.length === 0) {
+    ctx.fillStyle = '#999';
+    ctx.font = 'italic 20px "Arial Hebrew", Arial, sans-serif';
+    ctx.fillText('אין Wallboxים בתכנית', W - padR, y + 20);
+    return canvas;
+  }
+
   const lineH = 28;
-  const blockGap = 30;
-
-  ctx.font = '22px Arial';
+  const blockGap = 16;
   for (const wb of wbs) {
-    const colX = W - 60 - col * colW;
-    const items = wb.contents || [];
-    const blockH = lineH * 2 + items.length * lineH + blockGap;
-    if (y + blockH > H - 60 && col < cols - 1) { col++; y = 170; }
-
-    // WB header
+    if (y > H - 60) break; // overflow guard — legend is fixed height
     ctx.fillStyle = '#b00';
-    ctx.font = 'bold 26px Arial';
-    ctx.fillText(wb.name || '(ללא שם)', colX, y);
+    ctx.font = 'bold 24px "Arial Hebrew", Arial, sans-serif';
+    ctx.fillText(wb.name || '(ללא שם)', W - padR, y);
     y += lineH;
-
-    // items or empty
-    ctx.font = '20px Arial';
+    const items = wb.contents || [];
+    ctx.font = '18px "Arial Hebrew", Arial, sans-serif';
     if (items.length === 0) {
-      ctx.fillStyle = '#999';
-      ctx.fillText('— אין פריטים —', colX - 20, y);
-      y += lineH;
+      ctx.fillStyle = '#aaa';
+      ctx.fillText('— אין פריטים —', W - padR - 8, y);
+      y += lineH - 2;
     } else {
       ctx.fillStyle = '#222';
       for (const it of items) {
-        ctx.fillText(`• ${it.name} ×${it.qty}`, colX - 20, y);
-        y += lineH;
+        if (y > H - 40) break;
+        ctx.fillText(`• ${it.name} ×${it.qty}`, W - padR - 8, y);
+        y += lineH - 2;
       }
     }
     y += blockGap;
